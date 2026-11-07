@@ -42,6 +42,17 @@ const PRODUCT_REQUESTS = [
 const AMOUNT = /(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)\s*(k)?|([\d,]+(?:\.\d+)?)\s*(k)?\s*(?:rupees|rs\b|₹|\/-|per month|a month|monthly)/gi;
 const parseAmount = (digits, k) => Math.round(Number(String(digits).replace(/,/g, '')) * (k ? 1000 : 1));
 
+// City names as owners type them in Indian scripts (matched as substrings, since \b does not work outside Latin).
+const NATIVE_CITIES = {
+  mumbai: ['मुंबई', 'मुम्बई', 'મુંબઈ', 'মুম্বাই', 'மும்பை', 'ముంబై', 'ಮುಂಬೈ'], delhi: ['दिल्ली', 'ਦਿੱਲੀ', 'দিল্লি', 'டெல்லி', 'ఢిల్లీ', 'ದೆಹಲಿ', 'દિલ્હી'],
+  bengaluru: ['बेंगलुरु', 'बैंगलोर', 'ಬೆಂಗಳೂರು', 'பெங்களூர்', 'బెంగళూరు'], chennai: ['चेन्नई', 'சென்னை', 'చెన్నై', 'ಚೆನ್ನೈ', 'ചെന്നൈ'],
+  kolkata: ['कोलकाता', 'কলকাতা'], hyderabad: ['हैदराबाद', 'హైదరాబాద్', 'ஹைதராபாத்', 'ಹೈದರಾಬಾದ್'], pune: ['पुणे', 'पूना'], ahmedabad: ['अहमदाबाद', 'અમદાવાદ'],
+  jaipur: ['जयपुर'], lucknow: ['लखनऊ'], indore: ['इंदौर'], bhopal: ['भोपाल'], nagpur: ['नागपुर'], patna: ['पटना'], kanpur: ['कानपुर'], nashik: ['नाशिक', 'नासिक'],
+  surat: ['सूरत', 'સુરત'], vadodara: ['वडोदरा', 'વડોદરા'], ludhiana: ['लुधियाना', 'ਲੁਧਿਆਣਾ'], chandigarh: ['चंडीगढ़', 'ਚੰਡੀਗੜ੍ਹ'], amritsar: ['अमृतसर', 'ਅੰਮ੍ਰਿਤਸਰ'],
+  kochi: ['കൊച്ചി', 'कोच्चि'], thiruvananthapuram: ['തിരുവനന്തപുരം'], coimbatore: ['கோயம்புத்தூர்', 'कोयंबटूर'], madurai: ['மதுரை'], mysuru: ['ಮೈಸೂರು'],
+  visakhapatnam: ['విశాఖపట్నం', 'विशाखापत्तनम'], vijayawada: ['విజయవాడ'], guwahati: ['গুৱাহাটী', 'গুয়াহাটি', 'गुवाहाटी'], bhubaneswar: ['भुवनेश्वर'],
+};
+
 let cityTiers;
 function cityTierIndex() {
   if (!cityTiers) {
@@ -59,16 +70,16 @@ export function understand(text) {
 
   if (/\b(just|only) me\b|\bmyself\b|\bsolo\b|alone|sirf main|अकेला|अकेली|केवल मैं/i.test(value)) updates.employees = 1;
   const people = value.match(new RegExp(`${NUM}\\s*(?:-|\\s)?\\s*(?:${PEOPLE_WORDS})`, 'i')) || value.match(new RegExp(`(?:team of|staff of|we are|हम)\\s*${NUM}`, 'i'));
-  if (people && Number.isFinite(toNumber(people[1]))) updates.employees = bucketEmployees(toNumber(people[1]));
+  if (people && Number.isFinite(toNumber(people[1]))) updates.employees = Math.max(1, Math.round(toNumber(people[1])));
   if (/single (location|shop|store|outlet|site|branch)|one (location|shop|store|outlet|site)|ek (hi )?(dukaan|dukan|jagah)/i.test(value)) updates.sites = 1;
   const sites = value.match(new RegExp(`${NUM}\\s*(?:${SITE_WORDS})`, 'i'));
-  if (sites && Number.isFinite(toNumber(sites[1])) && !(people && people.index === sites.index)) updates.sites = bucketSites(toNumber(sites[1]));
+  if (sites && Number.isFinite(toNumber(sites[1])) && !(people && people.index === sites.index)) updates.sites = Math.max(1, Math.round(toNumber(sites[1])));
 
   for (const [type, regex] of BUSINESS) if (regex.test(value)) { updates.business = type; break; }
   if (updates.business === 'multi' && !updates.sites) updates.sites = 2;
   if ((updates.sites ?? 0) >= 2 && /restaurant|cafe|store|shop|outlet|bakery|salon|pharmacy/i.test(value) && !/clinic|office|factory|workshop/i.test(value)) updates.business = 'multi';
 
-  if (/no gst|not gst|without gst|gst nahi|gst nahin|not registered|unregistered|no registration|gst नहीं|जीएसटी नहीं|gst.{0,12}(नाही|नहीं|இல்லை|లేదు|ಇಲ್ಲ|નથી|নেই|ഇല്ല|ਨਹੀਂ)|don'?t have (a )?gst/i.test(value)) updates.gstin = 'no';
+  if (/no gst|not gst|without gst|gst nahi|gst nahin|not registered|unregistered|no registration|gst नहीं|जीएसटी नहीं|(gst|जीएसटी|ஜிஎஸ்டி|ಜಿಎಸ್ಟಿ|జిఎస్టి|જીએસટી|জিএসটি|ജിഎസ്ടി|ਜੀਐਸਟੀ).{0,12}(नाही|नहीं|नही|இல்லை|லேது|లేదు|ಇಲ್ಲ|નથી|নেই|নাই|ഇല്ല|ਨਹੀਂ)|don'?t have (a )?gst/i.test(value)) updates.gstin = 'no';
   else if (/gstin|\bgst\b|जीएसटी|ஜிஎஸ்டி|ಜಿಎಸ್ಟಿ|జిఎస్టి|જીએસટી|জিএসটি|ജിഎസ്ടി|ਜੀਐਸਟੀ/i.test(value)) updates.gstin = 'yes';
 
   if (/leased|dedicated line|several (isp|provider)|multiple (isp|provider)|different (isp|provider)|लीज़्ड|लीज्ड/i.test(value)) updates.current = 'leased';
@@ -101,11 +112,13 @@ export function understand(text) {
   else if (/tier\s*(2|two|ii)\b|non.?metro|small (town|city)/i.test(value)) updates.tier = '2';
   else {
     for (const [name, tier] of cityTierIndex()) if (new RegExp(`\\b${name}\\b`, 'i').test(value)) { updates.tier = tier; city = name; break; }
+    if (!city) for (const [name, spellings] of Object.entries(NATIVE_CITIES)) if (spellings.some(spelling => value.includes(spelling))) { city = name; updates.tier = cityTierIndex().get(name) || (['mumbai', 'delhi', 'bengaluru', 'chennai', 'kolkata', 'hyderabad', 'pune', 'ahmedabad'].includes(name) ? '1' : '2'); break; }
   }
 
   for (const [id, regex] of PRODUCT_REQUESTS) if (regex.test(value)) wants.push(id);
   for (const key of Object.keys(updates)) found.add(key);
   const recognized = found.size > 0 || wants.length > 0 || budget !== null || /^(skip|no|none|nahi|नहीं)$/i.test(value.trim());
-  if (/^(skip|no thanks|nahi)$/i.test(value.trim())) found.add('spend');
+  // "Skip" (in any of the common forms) answers the optional spend question instead of repeating it.
+  if (/^(skip|no thanks|nahi|pass|not sure|don'?t know|पता नहीं|छोड़ें|தெரியாது|ছেড়ে দিন)$/i.test(value.trim())) { found.add('spend'); updates.spend ??= ''; }
   return { updates, found: [...found], wants, budget, city, recognized };
 }

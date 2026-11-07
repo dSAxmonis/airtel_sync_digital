@@ -54,14 +54,28 @@ test('Smart KYC verdicts for all 12 specimen applicants', { timeout: 300_000 }, 
 test('verification decision: registry first, then required documents, then checks', () => {
   const pass = { type: 'Address proof', checks: [{ status: 'pass' }] };
   const id = { type: 'Signatory ID', checks: [{ status: 'pass' }] };
+  const owned = { method: 'bank', verifiedAt: new Date() };
   assert.equal(decide({ gst: null, udyam: null, results: [pass, id] }).status, 'registry_needed');
-  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass] }).status, 'documents_needed');
-  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass, { type: 'Signatory ID', checks: [{ status: 'fail', label: 'x' }] }] }).status, 'action_needed');
-  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass, { type: 'Signatory ID', checks: [{ status: 'warn', label: 'x' }] }] }).status, 'in_review');
-  const verifiedGst = decide({ gst: { status: 'Active' }, udyam: null, results: [pass, id] });
+  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass], ownership: owned }).status, 'documents_needed');
+  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass, { type: 'Signatory ID', checks: [{ status: 'fail', label: 'x' }] }], ownership: owned }).status, 'action_needed');
+  assert.equal(decide({ gst: { status: 'Active' }, udyam: null, results: [pass, { type: 'Signatory ID', checks: [{ status: 'warn', label: 'x' }] }], ownership: owned }).status, 'in_review');
+  const verifiedGst = decide({ gst: { status: 'Active' }, udyam: null, results: [pass, id], ownership: owned });
   assert.deepEqual([verifiedGst.status, verifiedGst.tier], ['verified', 'gst']);
-  const verifiedUdyam = decide({ gst: { status: 'Cancelled' }, udyam: { udyam_number: 'x' }, results: [pass, id] });
+  // A registry match alone is not enough: the applicant must also prove they control the business.
+  const noProof = decide({ gst: { status: 'Active' }, udyam: null, results: [pass, id] });
+  assert.equal(noProof.status, 'documents_needed');
+  assert.deepEqual(noProof.missing, ['Ownership proof']);
+  const verifiedUdyam = decide({ gst: null, udyam: { udyam_number: 'x' }, results: [pass, id], ownership: owned });
   assert.deepEqual([verifiedUdyam.status, verifiedUdyam.tier], ['verified', 'udyam']);
+  // A cancelled GSTIN is a hard stop even with a valid Udyam registration.
+  const cancelled = decide({ gst: { status: 'Cancelled' }, udyam: { udyam_number: 'x' }, results: [pass, id], ownership: owned });
+  assert.equal(cancelled.status, 'action_needed');
+  assert.ok(cancelled.failed[0].hard && /cancelled/.test(cancelled.failed[0].label));
+  const stopped = decide({ gst: { status: 'Active' }, udyam: null, results: [pass, id], ownership: owned, hardStops: [{ type: 'Registry', status: 'fail', label: 'This GSTIN is already verified for another account' }] });
+  assert.equal(stopped.status, 'action_needed');
+  // A partnership signs through an authorised person, so a letter of authorisation is required.
+  const llp = decide({ gst: { status: 'Active', constitution: 'Limited Liability Partnership' }, udyam: null, results: [pass, id], ownership: owned });
+  assert.deepEqual(llp.missing, ['Authority letter']);
 });
 
 test('GST and Udyam pair only when they are the same enterprise', () => {
@@ -75,7 +89,7 @@ test('GST and Udyam pair only when they are the same enterprise', () => {
     for (const match of [...gst.values()].filter(item => item.trade_name === row.enterprise_name && item.state === row.state && item.principal_place_of_business.toLowerCase().includes(row.city.toLowerCase()))) { assert.ok(sameEnterprise(match, row).same, row.udyam_number); pairs++; }
   }
   assert.ok(pairs > 2000, `every genuine pair accepted (${pairs})`);
-  const mixed = decide({ gst: { ...ganeshGst, status: 'Active' }, udyam: udyam.get('UDYAM-TN-00-3866196'), results: [{ type: 'Address proof', checks: [{ status: 'pass' }] }, { type: 'Signatory ID', checks: [{ status: 'pass' }] }] });
+  const mixed = decide({ gst: { ...ganeshGst, status: 'Active' }, udyam: udyam.get('UDYAM-TN-00-3866196'), results: [{ type: 'Address proof', checks: [{ status: 'pass' }] }, { type: 'Signatory ID', checks: [{ status: 'pass' }] }], ownership: { method: 'bank', verifiedAt: new Date() } });
   assert.equal(mixed.status, 'action_needed', 'mixed registrations never verify');
 });
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapPin, Phone, Clock, PlayCircle, KeyRound, AlertOctagon, Camera, Gauge, Wrench } from 'lucide-react';
+import { MapPin, Phone, Clock, PlayCircle, KeyRound, AlertOctagon, Camera, Gauge, Wrench, LocateFixed } from 'lucide-react';
 import { api, errorMessage } from '../../api/client.js';
 import { longDate, dateTime } from '../../lib/format.js';
 import { Alert, Badge, Button, Card, Field, LoadState, Modal, STATUS_TONE, Steps, useLoad, useToast } from '../../components/ui.jsx';
@@ -20,10 +20,18 @@ export default function FieldJob() {
   const [failOpen, setFailOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState('');
+  const [premises, setPremises] = useState({ addressConfirmed: false, signboardMatches: false });
   const state = useLoad(async () => (await api.get(`/field/jobs/${id}`)).data.job, [id]);
   const act = async (key, request, message) => {
     setBusy(key);
     try { const { data } = await request(); if (data.job) state.setData(data.job); else await state.reload(true); if (message) toast(message); return true; } catch (error) { toast(errorMessage(error), 'error'); return false; } finally { setBusy(''); }
+  };
+  // Geotagged check-in at the premises (physical address verification before the connection goes live).
+  const checkIn = () => {
+    const send = (coords, source) => act('premises', () => api.patch(`/field/jobs/${id}/checklist`, { premises: { lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy, ...premises, source } }), 'Premises verified');
+    if (!navigator.geolocation) return send({ latitude: 19.076, longitude: 72.8777, accuracy: 20 }, 'demo');
+    setBusy('premises');
+    navigator.geolocation.getCurrentPosition(position => send(position.coords, 'gps'), () => { toast('Location unavailable here; using the demo location', 'error'); send({ latitude: 19.076, longitude: 72.8777, accuracy: 20 }, 'demo'); }, { enableHighAccuracy: true, timeout: 8000 });
   };
   const photo = file => { const form = new FormData(); form.append('file', file); return act('photo', () => api.post(`/field/jobs/${id}/photo`, form), 'Photo saved'); };
 
@@ -42,9 +50,17 @@ export default function FieldJob() {
           [Boolean(c.installedAt), 'Install the equipment', <Button variant="secondary" loading={busy === 'installed'} onClick={() => act('installed', () => api.patch(`/field/jobs/${id}/checklist`, { installed: true }))}><Wrench className="h-4 w-4" />Equipment installed</Button>],
           [c.speedMbps !== undefined && c.speedMbps !== null, `Speed test${c.speedMbps ? `: ${c.speedMbps} Mbps` : ''}`, <form className="flex max-w-sm gap-2" onSubmit={event => { event.preventDefault(); act('speed', () => api.patch(`/field/jobs/${id}/checklist`, { speedMbps: Number(speed) })); }}><input className="input" inputMode="decimal" required placeholder="Measured Mbps" value={speed} onChange={event => setSpeed(event.target.value.replace(/[^\d.]/g, ''))} /><Button type="submit" variant="secondary" loading={busy === 'speed'}><Gauge className="h-4 w-4" />Save</Button></form>],
           [Boolean(c.hasPhoto), 'Photo of the installation', <>{photoView}{installing && <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[#cfcfca] bg-white px-4 py-2.5 text-sm font-medium hover:border-ink"><Camera className="h-4 w-4" />{busy === 'photo' ? 'Uploading…' : c.hasPhoto ? 'Retake photo' : 'Take or choose photo'}<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) photo(file); }} /></label>}</>, true],
+          [Boolean(c.premises?.at && c.premises.addressConfirmed && c.premises.signboardMatches), `Verify the premises${c.premises?.at ? ` · ${c.premises.lat.toFixed(4)}, ${c.premises.lng.toFixed(4)} (±${Math.round(c.premises.accuracy)} m)` : ''}`, (
+            <div className="space-y-2 text-sm">
+              <p className="text-ink-muted">Confirm you are at the installation address before the customer signs off. The connection goes live only at verified premises.</p>
+              <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-ink" checked={premises.addressConfirmed} onChange={event => setPremises({ ...premises, addressConfirmed: event.target.checked })} />The address matches: {job.address || job.customer?.address || 'the registered address'}</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-ink" checked={premises.signboardMatches} onChange={event => setPremises({ ...premises, signboardMatches: event.target.checked })} />The signboard shows {job.customer?.name || 'the business name'}</label>
+              <Button variant="secondary" loading={busy === 'premises'} disabled={!installing || !premises.addressConfirmed || !premises.signboardMatches} onClick={checkIn}><LocateFixed className="h-4 w-4" />Check in with GPS</Button>
+            </div>
+          )],
           [Boolean(c.signedOffAt), 'Customer sign-off', (
             <div className="space-y-3">
-              <Button variant="secondary" loading={busy === 'signoff'} disabled={!c.installedAt || !c.hasPhoto || !c.speedMbps} onClick={() => act('signoff', () => api.post(`/field/jobs/${id}/signoff`), 'Code sent to the customer')}>Send sign-off code to customer</Button>
+              <Button variant="secondary" loading={busy === 'signoff'} disabled={!c.installedAt || !c.hasPhoto || !c.speedMbps || !c.premises?.addressConfirmed} onClick={() => act('signoff', () => api.post(`/field/jobs/${id}/signoff`), 'Code sent to the customer')}>Send sign-off code to customer</Button>
               <form className="flex max-w-sm gap-2" onSubmit={event => { event.preventDefault(); act('complete', () => api.post(`/field/jobs/${id}/complete`, { code }), 'Installed and activated'); }}><input className="input text-center font-mono tracking-[0.4em] placeholder:font-sans placeholder:tracking-normal" inputMode="numeric" maxLength={6} required placeholder="Customer's code" value={code} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} /><Button type="submit" loading={busy === 'complete'}><KeyRound className="h-4 w-4" />Complete</Button></form>
             </div>
           )],

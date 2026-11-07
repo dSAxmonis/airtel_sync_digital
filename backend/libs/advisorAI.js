@@ -2,17 +2,19 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { redactIdentifiers } from './redact.js';
+import { geminiConfigured, geminiJson, GeminiError } from './gemini.js';
 
-// Optional GenAI advisor. It runs only when Anthropic credentials are configured and ADVISOR_AI is not "off";
-// otherwise the browser keeps using its local multilingual rules.
+// GenAI advisor. Gemini when GEMINI_API_KEY is set (primary), else Claude when Anthropic credentials are set.
+// It only reads the conversation into profile fields; products, eligibility and prices are always decided by the
+// pricing engine. With no provider, or on any failure, the local multilingual rules are used instead.
 const LANGUAGE_NAMES = { 'en-IN': 'English', 'hi-IN': 'Hindi', 'mr-IN': 'Marathi', 'ta-IN': 'Tamil', 'te-IN': 'Telugu', 'kn-IN': 'Kannada', 'gu-IN': 'Gujarati', 'bn-IN': 'Bengali', 'ml-IN': 'Malayalam', 'pa-IN': 'Punjabi' };
 
 const AdvisorTurn = z.object({
   reply: z.string().describe('What the advisor says next, in the customer\'s language. At most 3 short sentences.'),
   profile_updates: z.object({
     business: z.enum(['retail', 'professional', 'multi', 'manufacturing']).nullable(),
-    employees: z.union([z.literal(1), z.literal(3), z.literal(8), z.literal(15), z.literal(30)]).nullable(),
-    sites: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(5), z.literal(8)]).nullable(),
+    employees: z.number().int().min(1).max(10000).nullable(),
+    sites: z.number().int().min(1).max(500).nullable(),
     tier: z.enum(['1', '2']).nullable(),
     gstin: z.enum(['yes', 'no']).nullable(),
     current: z.enum(['hotspot', 'home', 'business', 'leased', 'none']).nullable(),
@@ -22,6 +24,7 @@ const AdvisorTurn = z.object({
   wants: z.array(z.enum(['P01','P02','P03','P04','P05','P06','P07','P08','P09','P10','P11','P12','P13','P14','P15','P16','P17','P18','P19','P20','P21','P22','P23','P24','P25'])).describe('Catalogue product IDs the customer explicitly asked for in this conversation; empty if none.'),
   budget: z.number().int().min(0).max(1000000).nullable().describe('Monthly budget in rupees the customer stated as a limit, or null.'),
   ready: z.boolean().describe('True once business type, team size, locations, city tier, GST status, current internet and main goal are all known.'),
+  clarify: z.string().nullable().describe('If two statements contradict each other (e.g. "we have GST" and later "no GST"), the field name to confirm; else null.'),
 });
 
 function systemPrompt(catalogue) {
@@ -32,8 +35,10 @@ Your job is needs discovery. Learn, one short question at a time and only what i
 
 Map answers onto the profile fields:
 - business: retail = shop, kirana, salon, pharmacy, bakery; professional = clinic, CA/legal/insurance office, coaching centre; multi = restaurant chain or any business with branches; manufacturing = workshop, factory, textile or auto-parts unit.
-- employees bucket: 1 (just the owner), 3 (2-5), 8 (6-10), 15 (11-25), 30 (26+).
-- sites bucket: 1, 2, 3, 5 (4-5), 8 (6+).
+- employees: the exact number of people, including the owner ("just me" = 1). Never round.
+- sites: the exact number of locations.
+- tier: 1 for metros and large cities (Delhi NCR, Mumbai, Bengaluru, Chennai, Kolkata, Hyderabad, Pune, Ahmedabad), 2 for other cities. Recognise city names in any script (जयपुर = Jaipur, tier 2).
+- gstin: "no" for any negation in any language (GST nahi, GST नहीं, GST இல்லை, GST নেই, GST ഇല്ല). If statements contradict, ask a short question to confirm and set clarify.
 - current: hotspot, home, business, leased (leased line or several providers) or none.
 - spend: rupees per month as a number.
 
@@ -48,21 +53,37 @@ ${products}`;
 }
 
 let client;
-export function advisorAvailable() {
+const anthropicConfigured = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE);
+export function advisorProvider() {
   const mode = String(process.env.ADVISOR_AI || 'auto').toLowerCase();
-  if (mode === 'off') return false;
-  return mode === 'on' || Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE);
+  if (mode === 'off') return null;
+  if (geminiConfigured()) return 'gemini';
+  if (anthropicConfigured() || mode === 'on') return 'claude';
+  return null;
 }
+export const advisorAvailable = () => Boolean(advisorProvider());
 
 export class AdvisorUnavailable extends Error {}
 
 export async function advisorTurn({ catalogue, language, messages, profile }) {
-  client ||= new Anthropic();
   const languageName = LANGUAGE_NAMES[language] || 'English';
   // Identifiers an owner types by mistake (GSTIN, PAN, Aadhaar, phone…) never leave for the AI provider.
   const conversation = messages.map(message => ({ role: message.from === 'user' ? 'user' : 'assistant', content: redactIdentifiers(message.text).text }));
   while (conversation.length && conversation[0].role !== 'user') conversation.shift();
-  conversation.push({ role: 'system', content: `Reply in ${languageName}. Profile captured so far (from chips and the form): ${JSON.stringify(profile)}.` });
+  const context = `Reply in ${languageName}. Profile captured so far (from chips and the form): ${JSON.stringify(profile)}.`;
+  if (advisorProvider() === 'gemini') {
+    const last = conversation.pop();
+    const history = conversation.map(turn => ({ role: turn.role === 'user' ? 'user' : 'model', parts: [{ text: turn.content }] }));
+    try {
+      const { _model, ...turn } = await geminiJson({ system: `${systemPrompt(catalogue)}\n\n${context}`, history, parts: [{ text: last?.content || '' }], schema: AdvisorTurn });
+      return { ...turn, model: _model };
+    } catch (error) {
+      if (!(error instanceof GeminiError)) throw error;
+      console.error('Gemini advisor unavailable:', error.message);
+      throw new AdvisorUnavailable([401, 403].includes(error.status) ? 'GenAI advisor is not configured on this server.' : 'The GenAI advisor is busy. Local guidance is used for now.');
+    }
+  }
+  client ||= new Anthropic();
   try {
     const response = await client.beta.messages.parse({
       model: 'claude-opus-5-5',
@@ -71,11 +92,11 @@ export async function advisorTurn({ catalogue, language, messages, profile }) {
       fallbacks: 'default',
       output_config: { effort: 'low', format: betaZodOutputFormat(AdvisorTurn) },
       cache_control: { type: 'ephemeral' },
-      system: systemPrompt(catalogue),
+      system: `${systemPrompt(catalogue)}\n\n${context}`,
       messages: conversation,
     });
     if (response.stop_reason === 'refusal' || !response.parsed_output) throw new AdvisorUnavailable('The advisor could not answer that. Please use the quick replies.');
-    return response.parsed_output;
+    return { ...response.parsed_output, model: 'claude' };
   } catch (error) {
     if (error instanceof AdvisorUnavailable) throw error;
     if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) throw new AdvisorUnavailable('GenAI advisor is not configured on this server.');

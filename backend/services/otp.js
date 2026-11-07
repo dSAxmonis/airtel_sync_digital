@@ -3,7 +3,7 @@ import { randomCode, sha256 } from '../libs/security.js';
 import { config } from '../libs/config.js';
 import { HttpError } from '../middlewares/error.js';
 
-const TTL_MINUTES = { login: 10, esign: 10, delivery: 24 * 60, install: 6 * 60, aadhaar: 10 };
+const TTL_MINUTES = { login: 10, esign: 10, delivery: 24 * 60, install: 6 * 60, aadhaar: 10, digilocker: 10 };
 
 // Issues a code; in OTP dev mode the code is also returned so the demo works without an SMS provider.
 export async function issueOtp(purpose, target) {

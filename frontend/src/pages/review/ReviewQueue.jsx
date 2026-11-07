@@ -18,7 +18,7 @@ export default function ReviewQueue() {
             <Link key={row.id} to={`/review/${row.id}`} className="flex flex-col gap-3 p-4 hover:bg-paper/60 sm:flex-row sm:items-center">
               <Avatar name={row.name} className="hidden sm:grid" />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{row.name}</p><Badge tone={STATUS_TONE[row.status]}>{titleCase(row.status)}</Badge>{row.ownerRequested && <Badge tone="blue">Owner asked for review</Badge>}{row.tier && <Badge>{{ gst: 'GST', udyam: 'Udyam', owner: 'Owner-verified (unregistered)' }[row.tier]}</Badge>}</div>
+                <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">{row.name}</p><Badge tone={STATUS_TONE[row.status]}>{titleCase(row.status)}</Badge>{row.ownerRequested && <Badge tone="blue">Owner asked for review</Badge>}{row.pendingChecker && <Badge tone="amber">Waiting for a second officer</Badge>}{row.hardStops > 0 && <Badge tone="red">Hard stop</Badge>}{row.tier && <Badge>{{ gst: 'GST', udyam: 'Udyam', owner: 'Owner-verified (unregistered)' }[row.tier]}</Badge>}</div>
                 <p className="text-sm text-ink-muted">{row.city} · waiting {row.waitingHours} h · {timeAgo(row.submittedAt)}</p>
                 <ul className="mt-1 flex flex-wrap gap-1.5">{row.flags.map(flag => <li key={flag} className="rounded-lg bg-brand-50 px-2 py-0.5 text-xs text-brand-800">{flag}</li>)}</ul>
               </div>

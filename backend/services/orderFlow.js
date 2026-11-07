@@ -104,9 +104,17 @@ async function afterStatus(order, previous, ctx) {
     case 'delivered':
       await notifyCustomer(order.owner, 'delivered', { ...p, date: fmtDate(order.slot.date), window: order.slot.window }, `/app/orders/${order._id}`);
       break;
-    case 'installed':
+    case 'installed': {
+      // Activation is gated on the technician's physical verification of the premises.
+      const job = await Job.findOne({ order: order._id, type: 'installation' }).select('checklist.premises').lean();
+      if (job && !job.checklist?.premises?.addressConfirmed) {
+        pushEvent(order, { type: 'note', note: 'Activation is waiting for premises verification by the technician', role: 'system' });
+        await order.save();
+        break;
+      }
       await setStatus(order, 'active', { note: 'Lines, SIMs and services provisioned', role: 'system' });
       break;
+    }
     case 'active': {
       // The first month was paid with the order, so the first monthly bill comes next month (see raiseMonthlyBills).
       await notifyCustomer(order.owner, 'active', p, `/app/services`);

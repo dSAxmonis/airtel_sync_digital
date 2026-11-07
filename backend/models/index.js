@@ -9,3 +9,5 @@ export { Case, CASE_KINDS } from './Case.js';
 export { Product, GstRecord, UdyamRecord, Lead } from './Reference.js';
 export { Notification, Ticket, Invoice, AuditLog, DataRequest } from './Engagement.js';
 export { WaSession, WaMessage } from './WhatsApp.js';
+export { MockResident } from './MockResident.js';
+export { DigiLockerSession } from './DigiLockerSession.js';

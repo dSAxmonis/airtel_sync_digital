@@ -142,14 +142,28 @@ export async function requestSignature(req, res) {
   res.json({ sent: true, devCode });
 }
 
+// Takes the order for one state transition. Two concurrent requests (a double tap, a retried network call) cannot
+// both pass: only one matches { status, no live lease } and gets the lease.
+async function claim(order, status) {
+  const now = new Date();
+  const { modifiedCount } = await Order.updateOne({ _id: order._id, status, $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }] }, { $set: { lockedUntil: new Date(now.getTime() + 20_000) } });
+  return modifiedCount === 1;
+}
+const release = order => Order.updateOne({ _id: order._id }, { $unset: { lockedUntil: 1 } });
+
 export async function sign(req, res) {
   const { order, owner } = await ownedOrder(req);
   requireOwner(owner);
+  // Already signed (a repeated request): return the signed order instead of signing twice.
+  if (order.signature?.signedAt && order.status !== 'awaiting_signature') return res.json({ order: await presentOrder(order, req.user), idempotent: true });
   expect(order, 'awaiting_signature');
   const body = z.object({ code: z.string().trim().min(4), signerName: z.string().trim().min(2).max(80) }).parse(req.body);
-  await verifyOtp('esign', String(order._id), body.code);
-  order.signature = { signerName: body.signerName, signedAt: new Date(), documentHash: sha256(JSON.stringify({ ref: order.ref, items: order.items, totals: order.totals })) };
-  await setStatus(order, 'awaiting_payment', { actor: req.user, note: `Contract e-signed by ${body.signerName}` });
+  if (!(await claim(order, 'awaiting_signature'))) throw new HttpError(409, 'This signature is already being processed.', { code: 'in_progress' });
+  try {
+    await verifyOtp('esign', String(order._id), body.code);
+    order.signature = { signerName: body.signerName, signedAt: new Date(), documentHash: sha256(JSON.stringify({ ref: order.ref, items: order.items, totals: order.totals })) };
+    await setStatus(order, 'awaiting_payment', { actor: req.user, note: `Contract e-signed by ${body.signerName}` });
+  } finally { await release(order); }
   res.json({ order: await presentOrder(order, req.user) });
 }
 
@@ -157,11 +171,20 @@ export async function sign(req, res) {
 export async function pay(req, res) {
   const { order, owner } = await ownedOrder(req);
   requireOwner(owner);
+  // Idempotency-Key: a retried request with the same key returns the first result and never charges again.
+  const idempotencyKey = String(req.get('Idempotency-Key') || '').slice(0, 80) || null;
+  if (idempotencyKey && order.payments.some(payment => payment.idempotencyKey === idempotencyKey && payment.status === 'success')) return res.json({ order: await presentOrder(order, req.user), idempotent: true });
+  if (order.paidAt && order.status !== 'awaiting_payment') return res.json({ order: await presentOrder(order, req.user), idempotent: true });
   expect(order, 'awaiting_payment');
   const body = z.object({ simulate: z.enum(['success', 'failure']).default('success'), autopay: z.boolean().default(true) }).parse(req.body || {});
+  if (!(await claim(order, 'awaiting_payment'))) throw new HttpError(409, 'This payment is already being processed.', { code: 'in_progress' });
+  try { return await settlePayment(req, res, order, body, idempotencyKey); } finally { await release(order); }
+}
+
+async function settlePayment(req, res, order, body, idempotencyKey) {
   const amount = order.totals.dueNow;
   if (body.simulate === 'failure') {
-    order.payments.push({ amount, status: 'failed', method: 'upi', reason: 'Bank declined the UPI request', reference: `UPI${randomToken(6).toUpperCase()}` });
+    order.payments.push({ amount, status: 'failed', method: 'upi', reason: 'Bank declined the UPI request', reference: `UPI${randomToken(6).toUpperCase()}`, idempotencyKey });
     order.paymentFailures += 1;
     pushEvent(order, { type: 'payment_failed', note: `Payment attempt ${order.paymentFailures} failed`, actor: req.user });
     await order.save();
@@ -172,7 +195,7 @@ export async function pay(req, res) {
     }
     return res.status(402).json({ error: 'The payment did not go through. You can try again.', order: await presentOrder(order, req.user) });
   }
-  order.payments.push({ amount, status: 'success', method: 'upi', reference: `UPI${randomToken(6).toUpperCase()}` });
+  order.payments.push({ amount, status: 'success', method: 'upi', reference: `UPI${randomToken(6).toUpperCase()}`, idempotencyKey });
   order.paidAt = new Date();
   order.autopay = body.autopay;
   order.dueBy = addBusinessDays(new Date(), Math.max(2, Number(order.totals.installDays || 3)));

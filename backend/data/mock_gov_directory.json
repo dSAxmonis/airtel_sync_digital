@@ -1,0 +1,382 @@
+{
+ "note": "SIMULATION ONLY. Stands in for UIDAI, DigiLocker, Protean (PAN) and bank penny-drop responses for the synthetic case-pack businesses. Production calls the real providers.",
+ "residents": [
+  {
+   "key": "K01",
+   "aadhaar": "730000011118",
+   "name": "Neha Kaur",
+   "yearOfBirth": 1973,
+   "gender": "F",
+   "mobileLast4": "4013",
+   "pan": "IHKXV5167L",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "37IHKXV5167L1ZS",
+     "udyam": "UDYAM-TS-00-8751054",
+     "business": "Vindhya Tours & Travels",
+     "businessPan": "IHKXV5167L"
+    }
+   ]
+  },
+  {
+   "key": "K02",
+   "aadhaar": "730000022220",
+   "name": "Joseph Shah",
+   "yearOfBirth": 1976,
+   "gender": "M",
+   "mobileLast4": "4026",
+   "pan": "EOGXH4115Y",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "19EOGXH4115Y1ZL",
+     "udyam": "UDYAM-WB-00-5053330",
+     "business": "Harmony Dental Care",
+     "businessPan": "EOGXH4115Y"
+    }
+   ]
+  },
+  {
+   "key": "K03",
+   "aadhaar": "730000033331",
+   "name": "Joseph Singh",
+   "yearOfBirth": 1979,
+   "gender": "F",
+   "mobileLast4": "4039",
+   "pan": "XUIXG0767D",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "27XUIXG0767D1ZP",
+     "udyam": "UDYAM-MH-00-9516696",
+     "business": "Ganesh Woodcraft",
+     "businessPan": "XUIXG0767D"
+    }
+   ]
+  },
+  {
+   "key": "K04",
+   "aadhaar": "730000044449",
+   "name": "Fatima Pillai",
+   "yearOfBirth": 1982,
+   "gender": "M",
+   "mobileLast4": "4052",
+   "pan": "ABCPE1148K",
+   "links": [
+    {
+     "role": "Designated partner",
+     "gstin": null,
+     "udyam": "UDYAM-MH-00-6131836",
+     "business": "Saffron Dental Care LLP",
+     "businessPan": null
+    }
+   ]
+  },
+  {
+   "key": "K05",
+   "aadhaar": "730000055551",
+   "name": "Anita Shah",
+   "yearOfBirth": 1985,
+   "gender": "F",
+   "mobileLast4": "4065",
+   "pan": "ABCPF1185K",
+   "links": [
+    {
+     "role": "Designated partner",
+     "gstin": "32TZAXB5481U1Z1",
+     "udyam": null,
+     "business": "Balaji Realty LLP",
+     "businessPan": "TZAXB5481U"
+    }
+   ]
+  },
+  {
+   "key": "K06",
+   "aadhaar": "730000066661",
+   "name": "Pooja Shah",
+   "yearOfBirth": 1988,
+   "gender": "M",
+   "mobileLast4": "4078",
+   "pan": "YKZXS5189L",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "08YKZXS5189L1ZO",
+     "udyam": "UDYAM-RJ-00-6577157",
+     "business": "Saffron Unisex Salon",
+     "businessPan": "YKZXS5189L"
+    }
+   ]
+  },
+  {
+   "key": "K07",
+   "aadhaar": "730000077773",
+   "name": "Neha Banerjee",
+   "yearOfBirth": 1991,
+   "gender": "F",
+   "mobileLast4": "4091",
+   "pan": "CPCXN0398P",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "07CPCXN0398P1ZT",
+     "udyam": "UDYAM-DL-00-9565547",
+     "business": "Neelgiri Physio Clinic",
+     "businessPan": "CPCXN0398P"
+    }
+   ]
+  },
+  {
+   "key": "K08",
+   "aadhaar": "730000088880",
+   "name": "Joseph Rao",
+   "yearOfBirth": 1994,
+   "gender": "M",
+   "mobileLast4": "4104",
+   "pan": "XORXG9365M",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "24XORXG9365M1Z3",
+     "udyam": "UDYAM-GJ-00-8477445",
+     "business": "Green Leaf Legal Associates",
+     "businessPan": "XORXG9365M"
+    }
+   ]
+  },
+  {
+   "key": "K09",
+   "aadhaar": "730000099999",
+   "name": "Anita Kulkarni",
+   "yearOfBirth": 1972,
+   "gender": "F",
+   "mobileLast4": "4117",
+   "pan": "LDYXK0296F",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "37LDYXK0296F1ZB",
+     "udyam": "UDYAM-AP-00-9751562",
+     "business": "Kaveri Insurance Advisors",
+     "businessPan": "LDYXK0296F"
+    }
+   ]
+  },
+  {
+   "key": "K10",
+   "aadhaar": "730000111104",
+   "name": "Nisha Arora",
+   "yearOfBirth": 1975,
+   "gender": "M",
+   "mobileLast4": "4130",
+   "pan": "ABCPK1370K",
+   "links": [
+    {
+     "role": "Designated partner",
+     "gstin": "27QHJXK0658U1ZL",
+     "udyam": "UDYAM-MH-00-7183141",
+     "business": "Kaveri Stays LLP",
+     "businessPan": "QHJXK0658U"
+    }
+   ]
+  },
+  {
+   "key": "K11",
+   "aadhaar": "730000122214",
+   "name": "Vikram Pillai",
+   "yearOfBirth": 1978,
+   "gender": "F",
+   "mobileLast4": "4143",
+   "pan": "ABCPL1407K",
+   "links": [
+    {
+     "role": "Director",
+     "gstin": "03KGZXT1320R1ZZ",
+     "udyam": "UDYAM-PB-00-9719478",
+     "business": "Trinity Bake House Pvt Ltd",
+     "businessPan": "KGZXT1320R"
+    }
+   ]
+  },
+  {
+   "key": "K12",
+   "aadhaar": "730000133322",
+   "name": "Pooja Agarwal",
+   "yearOfBirth": 1981,
+   "gender": "M",
+   "mobileLast4": "4156",
+   "pan": "NBLXS1145E",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "37NBLXS1145E1ZU",
+     "udyam": "UDYAM-AP-00-5186772",
+     "business": "Star Electronics",
+     "businessPan": "NBLXS1145E"
+    }
+   ]
+  },
+  {
+   "key": "SAFFRON",
+   "aadhaar": "730000144433",
+   "name": "Sneha Rao",
+   "yearOfBirth": 1984,
+   "gender": "F",
+   "mobileLast4": "4169",
+   "pan": "PJNXS4821G",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "03PJNXS4821G1ZB",
+     "udyam": null,
+     "business": "Saffron Bakers",
+     "businessPan": "PJNXS4821G"
+    }
+   ]
+  },
+  {
+   "key": "BALAJI",
+   "aadhaar": "730000155548",
+   "name": "Prakash Shah",
+   "yearOfBirth": 1987,
+   "gender": "M",
+   "mobileLast4": "4182",
+   "pan": "ABCPO1518K",
+   "links": [
+    {
+     "role": "Designated partner",
+     "gstin": "32TTNXB7384T1ZW",
+     "udyam": "UDYAM-KL-00-3078801",
+     "business": "Balaji Dental Care LLP",
+     "businessPan": "TTNXB7384T"
+    }
+   ]
+  },
+  {
+   "key": "STAR_CHENNAI",
+   "aadhaar": "730001666596",
+   "name": "Joseph Joshi",
+   "yearOfBirth": 1984,
+   "gender": "M",
+   "mobileLast4": "0001",
+   "pan": "MFTXS9954Q",
+   "links": [
+    {
+     "role": "Proprietor",
+     "gstin": "33MFTXS9954Q1Z9",
+     "udyam": "UDYAM-TN-00-3866196",
+     "business": "Star Electronics",
+     "businessPan": "MFTXS9954Q"
+    }
+   ]
+  }
+ ],
+ "bankAccounts": [
+  {
+   "ifsc": "SYNB0001001",
+   "account": "50100007919",
+   "holder": "Vindhya Tours & Travels",
+   "business": "Vindhya Tours & Travels",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001002",
+   "account": "50100015838",
+   "holder": "Harmony Dental Care",
+   "business": "Harmony Dental Care",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001003",
+   "account": "50100023757",
+   "holder": "Ganesh Woodcraft",
+   "business": "Ganesh Woodcraft",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001004",
+   "account": "50100031676",
+   "holder": "Saffron Dental Care LLP",
+   "business": "Saffron Dental Care LLP",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001005",
+   "account": "50100039595",
+   "holder": "Balaji Realty LLP",
+   "business": "Balaji Realty LLP",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001006",
+   "account": "50100047514",
+   "holder": "Saffron Unisex Salon",
+   "business": "Saffron Unisex Salon",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001007",
+   "account": "50100055433",
+   "holder": "Neelgiri Physio Clinic",
+   "business": "Neelgiri Physio Clinic",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001008",
+   "account": "50100063352",
+   "holder": "Green Leaf Legal Associates",
+   "business": "Green Leaf Legal Associates",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001009",
+   "account": "50100071271",
+   "holder": "Kaveri Insurance Advisors",
+   "business": "Kaveri Insurance Advisors",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001010",
+   "account": "50100079190",
+   "holder": "Kaveri Stays LLP",
+   "business": "Kaveri Stays LLP",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001011",
+   "account": "50100087109",
+   "holder": "Trinity Bake House Pvt Ltd",
+   "business": "Trinity Bake House Pvt Ltd",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001012",
+   "account": "50100095028",
+   "holder": "Star Electronics",
+   "business": "Star Electronics",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001013",
+   "account": "50100102947",
+   "holder": "Saffron Bakers",
+   "business": "Saffron Bakers",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001014",
+   "account": "50100110866",
+   "holder": "Balaji Dental Care LLP",
+   "business": "Balaji Dental Care LLP",
+   "type": "Current"
+  },
+  {
+   "ifsc": "SYNB0001015",
+   "account": "50100118785",
+   "holder": "Star Electronics",
+   "business": "Star Electronics (Chennai)",
+   "type": "Current"
+  }
+ ]
+}

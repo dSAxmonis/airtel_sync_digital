@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 // One-time codes for login, e-sign, delivery hand-over and installation sign-off. Stored hashed; expire automatically.
 const otpSchema = new mongoose.Schema({
-  purpose: { type: String, enum: ['login', 'esign', 'delivery', 'install', 'aadhaar'], required: true },
+  purpose: { type: String, enum: ['login', 'esign', 'delivery', 'install', 'aadhaar', 'digilocker'], required: true },
   target: { type: String, required: true, index: true },
   codeHash: { type: String, required: true },
   attempts: { type: Number, default: 0 },

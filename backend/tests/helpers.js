@@ -8,7 +8,7 @@ export const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.u
 export async function startServer(port, database) {
   const child = spawn(process.execPath, [path.join(backendRoot, 'server.js')], {
     cwd: backendRoot,
-    env: { ...process.env, PORT: String(port), MONGO_URI: `mongodb://127.0.0.1:27017/${database}`, ADVISOR_AI: 'off', SCHEDULER_SECONDS: '0', DEMO_MODE: 'true', OTP_DEV_MODE: 'true', R2_ACCESS_KEY_ID: '', CLIENT_URL: 'http://localhost' },
+    env: { ...process.env, PORT: String(port), MONGO_URI: `mongodb://127.0.0.1:27017/${database}`, ADVISOR_AI: 'off', GEMINI_API_KEY: '', SCHEDULER_SECONDS: '0', DEMO_MODE: 'true', OTP_DEV_MODE: 'true', R2_ACCESS_KEY_ID: '', CLIENT_URL: 'http://localhost' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

@@ -2,6 +2,7 @@
 // verification state, tells the owner exactly what to do, and moves waiting orders on when verified.
 import { Business, Order, Consent } from '../models/index.js';
 import { checkDocuments, decide } from '../libs/kycRules.js';
+import { readerChecks } from './documentReader.js';
 import { decrypt } from '../libs/security.js';
 import { deleteObject } from '../libs/storage.js';
 import { validateLines } from '../libs/pricing.js';
@@ -68,6 +69,30 @@ export async function activeConsent(user, business) {
 
 const NOTIFY = { verified: 'kyc_verified', action_needed: 'kyc_action_needed', in_review: 'kyc_in_review' };
 
+// Identifiers that can belong to only one owner. Reuse by a different account is a hard stop (or, for a file or a
+// previously rejected application, a flag for a human).
+const ACTIVE = ['verified', 'in_review', 'action_needed', 'documents_needed'];
+export async function identityConflicts(business) {
+  const others = { _id: { $ne: business._id }, owner: { $ne: business.owner } };
+  const stops = [], flags = [];
+  const probe = async (field, value, label) => {
+    if (!value) return;
+    const hit = await Business.findOne({ ...others, [field]: value, 'kyc.status': { $in: ['verified', 'rejected'] } }).select('kyc.status').lean();
+    if (!hit) return;
+    if (hit.kyc.status === 'verified') stops.push({ type: 'Registry', status: 'fail', label: `${label} is already verified for another account`, detail: 'One registration or identity can be linked to only one owner account. If this is your business, contact support to transfer it.' });
+    else flags.push({ type: 'Registry', status: 'warn', label: `${label} was in an application that was not approved`, detail: 'A KYC officer will review this application.' });
+  };
+  await probe('gst.gstinHash', business.gst?.gstinHash, 'This GSTIN');
+  await probe('udyam.numberHash', business.udyam?.numberHash, 'This Udyam number');
+  await probe('ownerKyc.aadhaarRef', business.ownerKyc?.aadhaarRef, 'This Aadhaar');
+  await probe('ownership.bank.hash', business.ownership?.bank?.hash, 'This bank account');
+  for (const doc of business.documents) {
+    if (!doc.fileHash || doc.source === 'digilocker') continue;
+    if (await Business.exists({ ...others, 'documents.fileHash': doc.fileHash })) flags.push({ type: doc.type, status: 'warn', label: 'The same file was uploaded by another applicant', detail: 'A KYC officer will check it.' });
+  }
+  return { stops, flags };
+}
+
 export async function evaluateBusiness(business, { trigger = 'documents' } = {}) {
   const gst = registryGst(business), udyam = registryUdyam(business);
   const documents = business.documents.map(doc => ({ type: doc.type, confidence: doc.confidence, fields: doc.fields || {}, looksLike: doc.looksLike }));
@@ -75,18 +100,35 @@ export async function evaluateBusiness(business, { trigger = 'documents' } = {})
   const owner = business.ownerKyc?.verifiedAt ? { name: business.ownerKyc.name } : null;
   const declared = unregistered ? business.registration?.declared : null;
   const { results } = await checkDocuments({ documents, gst: gst?.status ? gst : null, udyam, lookups, owner, declared });
+  const conflicts = await identityConflicts(business);
   for (const doc of business.documents) {
     const result = results.find(item => item.type === doc.type);
-    if (result) { doc.status = result.status; doc.checks = result.checks; }
+    if (!result) continue;
+    const extra = doc.source === 'digilocker'
+      ? [{ status: doc.issued?.signatureVerified ? 'pass' : 'fail', label: doc.issued?.signatureVerified ? `Issued by ${doc.issued.issuerName}, signature verified` : 'Issuer signature could not be verified', detail: 'Pulled from DigiLocker with your consent.' }]
+      : [...readerChecks(doc), ...conflicts.flags.filter(flag => flag.type === doc.type)];
+    result.checks = [...extra.filter(check => check.status === 'pass'), ...result.checks.filter(check => !(doc.source === 'digilocker' && check.label === 'Document read')), ...extra.filter(check => check.status !== 'pass')];
+    result.status = result.checks.some(check => check.status === 'fail') ? 'fail' : result.checks.some(check => check.status === 'warn') ? 'warn' : 'pass';
+    doc.status = result.status; doc.checks = result.checks;
   }
+  const signatureFailed = business.documents.some(doc => doc.source === 'digilocker' && !doc.issued?.signatureVerified);
+  const hardStops = [...conflicts.stops, ...(signatureFailed ? [{ type: 'Registry', status: 'fail', label: 'A DigiLocker document failed its issuer signature check', detail: 'The document may have been altered. A KYC officer will contact you.' }] : [])];
+  const registryFlags = conflicts.flags.filter(flag => flag.type === 'Registry');
   const outstandingRequest = business.kyc.reviewRequests?.find(request => !request.resolvedAt && !business.documents.some(doc => doc.type === request.docType && doc.uploadedAt > request.at));
-  const decision = decide({ gst: gst?.status ? gst : null, udyam, results, unregistered, owner });
+  const gstForDecision = gst?.status ? { ...gst, constitution: business.gst?.constitution } : null;
+  const decision = decide({ gst: gstForDecision, udyam, results, unregistered, owner, hardStops, ownership: business.ownership?.verifiedAt ? business.ownership : null });
+  decision.warnings.push(...registryFlags);
+  if (decision.status === 'verified' && registryFlags.length) decision.status = 'in_review';
   const previous = business.kyc.status;
   let status = decision.status;
   if (outstandingRequest && status === 'verified') status = 'action_needed';
   if (previous === 'verified' && trigger === 'reuse') status = 'verified';
+  // A rejection sticks: new evidence is recorded, but only a KYC officer can reopen the application.
+  if (previous === 'rejected' && trigger !== 'officer') status = 'rejected';
+  // An approval waiting for the second officer keeps the application in review.
+  if (business.kyc.pendingApproval?.at && status !== 'action_needed') status = 'in_review';
   Object.assign(business.kyc, {
-    status, tier: decision.tier, checkedAt: new Date(), missing: decision.missing, failed: decision.failed, warnings: decision.warnings,
+    status, tier: decision.tier, checkedAt: new Date(), missing: decision.missing, failed: decision.failed, warnings: decision.warnings, hardStops: decision.hardStops,
   });
   for (const request of business.kyc.reviewRequests || []) if (!request.resolvedAt && business.documents.some(doc => doc.type === request.docType && doc.uploadedAt > request.at)) request.resolvedAt = new Date();
   if (status === 'verified' && previous !== 'verified') { business.kyc.verifiedAt = new Date(); business.kyc.expiresAt = new Date(Date.now() + 365 * 86_400_000); }

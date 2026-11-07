@@ -40,6 +40,9 @@ function flowFor(language) {
   return getAdvisorCopy(language).flow;
 }
 
+const NO = /^(no|nope|nahi|nahin|नहीं|नही|नाही|இல்லை|లేదు|ಇಲ್ಲ|નથી|না|নেই|ഇല്ല|ਨਹੀਂ)$/i;
+const YES_NO = /^(yes|yeah|haan|ha|हाँ|हां|होय|ஆம்|అవును|ಹೌದು|હા|হ্যাঁ|അതെ|ਹਾਂ|no|nope|nahi|nahin|नहीं|नही|नाही|இல்லை|లేదు|ಇಲ್ಲ|નથી|না|নেই|ഇല്ല|ਨਹੀਂ)$/i;
+
 function question(session) {
   const step = flowFor(session.language).find(item => !session.answered.includes(item.key));
   if (!step) return null;
@@ -150,6 +153,10 @@ export async function handleInbound({ phone, text = '', choice = null, name = ''
     if (picked?.startsWith('ans:')) {
       const [, key, value] = picked.split(':');
       apply(session, { [key]: key === 'spend' ? (value === 'skip' ? '' : value) : value });
+      learned = true;
+    } else if (body && session.pending === 'gstin' && YES_NO.test(body.trim())) {
+      // A bare "yes"/"no" answers the GST question that was just asked, in any of the supported languages.
+      apply(session, { gstin: NO.test(body.trim()) ? 'no' : 'yes' });
       learned = true;
     } else if (body) {
       const result = understand(body);

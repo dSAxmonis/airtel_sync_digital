@@ -18,6 +18,7 @@ import * as demo from '../controllers/demoController.js';
 import * as help from '../controllers/helpController.js';
 import * as whatsapp from '../controllers/whatsappController.js';
 import * as unregistered from '../controllers/unregisteredController.js';
+import * as ownership from '../controllers/ownershipController.js';
 
 const router = Router();
 const otpLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many attempts. Try again in a few minutes.' } });
@@ -83,6 +84,17 @@ router.delete('/kyc/documents/:type', customerOnly, h(kyc.deleteDocument));
 router.post('/kyc/request-review', customerOnly, h(kyc.requestReview));
 router.post('/kyc/registration-help', customerOnly, h(help.registrationHelp));
 router.get('/documents/:docId/file', requireAuth, h(kyc.viewDocument));
+// Proof of control: PAN cross-check, ₹1 penny-drop, or DigiLocker (issuer-signed documents, OAuth + PKCE).
+router.post('/kyc/ownership/pan', customerOnly, aadhaarLimiter, h(ownership.verifyPan));
+router.post('/kyc/ownership/bank', customerOnly, aadhaarLimiter, h(ownership.verifyBank));
+router.post('/kyc/digilocker/start', customerOnly, h(ownership.startDigiLocker));
+router.post('/kyc/digilocker/complete', customerOnly, h(ownership.completeDigiLocker));
+router.get('/kyc/demo-identities', customerOnly, h(ownership.demoIdentities));
+// Simulated DigiLocker provider (what its sign-in and consent screens call). Replaced by the real provider in production.
+router.get('/digilocker-sim/request', customerOnly, h(ownership.providerInfo));
+router.post('/digilocker-sim/signin', customerOnly, aadhaarLimiter, h(ownership.providerSignIn));
+router.post('/digilocker-sim/verify', customerOnly, aadhaarLimiter, h(ownership.providerVerify));
+router.post('/digilocker-sim/consent', customerOnly, h(ownership.providerConsent));
 
 // Orders (owner; staff can read)
 router.post('/orders', customerOnly, h(orders.create));

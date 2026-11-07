@@ -36,19 +36,19 @@ function assertCompliant({ profile, quote }, gstVerified) {
 
 const SCENARIOS = [
   ['English clinic with GST, Pune', ['I run a dental clinic with 8 staff in Pune, we have GST, security matters'], { business: 'professional', employees: 8, tier: '1', gstin: 'yes', goal: 'security' }],
-  ['Hinglish kirana, no GST, budget', ['mera kirana shop hai, do log kaam karte hain, gst nahi hai, budget under 1500'], { business: 'retail', employees: 3, gstin: 'no' }],
-  ['Restaurant chain, 7 outlets, Nagpur', ['We are a restaurant chain with 7 outlets in Nagpur and 60 employees'], { business: 'multi', sites: 8, employees: 30, tier: '2' }],
-  ['Factory wants leased line + CCTV', ['Small textile factory, 40 workers, need a leased line and cctv, currently paying ₹12,000 a month'], { business: 'manufacturing', employees: 30, current: 'leased', spend: '12000' }],
+  ['Hinglish kirana, no GST, budget', ['mera kirana shop hai, do log kaam karte hain, gst nahi hai, budget under 1500'], { business: 'retail', employees: 2, gstin: 'no' }],
+  ['Restaurant chain, 7 outlets, Nagpur', ['We are a restaurant chain with 7 outlets in Nagpur and 60 employees'], { business: 'multi', sites: 7, employees: 60, tier: '2' }],
+  ['Factory wants leased line + CCTV', ['Small textile factory, 40 workers, need a leased line and cctv, currently paying ₹12,000 a month'], { business: 'manufacturing', employees: 40, current: 'leased', spend: '12000' }],
   ['Solo owner wants a website', ['just me, home broadband, I want a website'], { employees: 1, current: 'home' }],
   ['Hindi shop, no GST', ['मेरी दुकान में 3 लोग हैं, जीएसटी नहीं है'], { business: 'retail', employees: 3, gstin: 'no' }],
-  ['CA firm in Kochi on hotspot', ['CA firm in Kochi with 12 people, mobile hotspot, need business email'], { business: 'professional', employees: 15, tier: '2', current: 'hotspot' }],
+  ['CA firm in Kochi on hotspot', ['CA firm in Kochi with 12 people, mobile hotspot, need business email'], { business: 'professional', employees: 12, tier: '2', current: 'hotspot' }],
   ['Correction of locations', ['We have a clinic with 5 doctors', 'actually we have 3 branches'], { business: 'professional', sites: 3 }],
-  ['Salon wants customers via WhatsApp', ['beauty salon, 4 staff, want to reach more customers on whatsapp'], { business: 'retail', employees: 3, goal: 'customers' }],
-  ['Coaching centre, metro', ['coaching institute in a metro city, 20 teachers, internet keeps dropping'], { business: 'professional', employees: 15, tier: '1', goal: 'reliable' }],
-  ['Pharmacy billing', ['pharmacy with 2 people, need billing and inventory, gst registered'], { business: 'retail', employees: 3, gstin: 'yes', goal: 'operations' }],
-  ['Bakery chain in Ludhiana', ['bakery chain with 4 outlets in Ludhiana, 15 staff'], { business: 'multi', sites: 5, tier: '2' }],
-  ['Auto parts workshop', ['auto parts workshop, 12 workers, tier 2 city, need machine monitoring'], { business: 'manufacturing', employees: 15, tier: '2' }],
-  ['Lawyer office security', ['law office with 6 advocates, worried about ransomware'], { business: 'professional', employees: 8, goal: 'security' }],
+  ['Salon wants customers via WhatsApp', ['beauty salon, 4 staff, want to reach more customers on whatsapp'], { business: 'retail', employees: 4, goal: 'customers' }],
+  ['Coaching centre, metro', ['coaching institute in a metro city, 20 teachers, internet keeps dropping'], { business: 'professional', employees: 20, tier: '1', goal: 'reliable' }],
+  ['Pharmacy billing', ['pharmacy with 2 people, need billing and inventory, gst registered'], { business: 'retail', employees: 2, gstin: 'yes', goal: 'operations' }],
+  ['Bakery chain in Ludhiana', ['bakery chain with 4 outlets in Ludhiana, 15 staff'], { business: 'multi', sites: 4, tier: '2' }],
+  ['Auto parts workshop', ['auto parts workshop, 12 workers, tier 2 city, need machine monitoring'], { business: 'manufacturing', employees: 12, tier: '2' }],
+  ['Lawyer office security', ['law office with 6 advocates, worried about ransomware'], { business: 'professional', employees: 6, goal: 'security' }],
   ['Spend vs budget distinguished', ['we pay rs 3000 a month now, budget within 2500'], { spend: '3000' }],
   ['Weather is off-topic', ['what is the weather today'], {}],
   ['Plain broadband that keeps dropping', ['dental clinic, 8 staff, 2 locations in Pune, we have GST, current broadband keeps dropping'], { business: 'professional', employees: 8, sites: 2, tier: '1', current: 'business', goal: 'reliable' }],
@@ -106,12 +106,29 @@ test('self-declared GST never unlocks GST-only products', () => {
 });
 test('exhaustive sweep: every profile yields a compliant bundle', () => {
   let checked = 0;
-  for (const business of ['retail', 'professional', 'multi', 'manufacturing']) for (const goal of ['reliable', 'customers', 'security', 'operations', 'locations']) for (const employees of [1, 3, 8, 15, 30]) for (const sites of [1, 2, 3, 5, 8]) for (const tier of ['1', '2']) for (const gst of [false, true]) {
+  for (const business of ['retail', 'professional', 'multi', 'manufacturing']) for (const goal of ['reliable', 'customers', 'security', 'operations', 'locations']) for (const employees of [1, 2, 3, 5, 9, 10, 24, 25, 40]) for (const sites of [1, 2, 3, 5, 8]) for (const tier of ['1', '2']) for (const gst of [false, true]) {
     const profile = { ...DEFAULTS, business, goal, employees, sites, tier };
     const quote = buildQuote({ profile, catalogue, gstVerified: gst });
     if (!quote.items.length) continue;
     assertCompliant({ profile: normaliseProfile(profile), quote }, gst);
     checked++;
   }
-  assert.ok(checked > 1900, `checked ${checked}`);
+  assert.ok(checked > 3400, `checked ${checked}`);
+});
+
+// Catalogue thresholds are applied to the exact headcount: exactly 10 people may buy a leased line, 9 may not.
+test('eligibility at exact headcount thresholds', () => {
+  const base = { ...DEFAULTS, business: 'manufacturing', tier: '2', goal: 'operations' };
+  for (const [employees, id, ok] of [[10, 'P05', true], [9, 'P05', false], [25, 'P06', true], [24, 'P06', false], [3, 'P12', true], [2, 'P12', false]]) {
+    const quote = buildQuote({ profile: { ...base, employees }, catalogue, gstVerified: true, wants: [id] });
+    assert.equal(quote.items.some(item => item.productId === id), ok, `${employees} people, ${id}`);
+  }
+});
+test('refusals list every failed rule and never claim GST for products that do not need it', () => {
+  const quote = buildQuote({ profile: { ...DEFAULTS, business: 'retail', employees: 1, sites: 1, tier: '2' }, catalogue, gstVerified: false, wants: ['P10'] });
+  const note = quote.notes.find(item => item.code.startsWith('requested_'));
+  assert.deepEqual(note.params.reasons, ['employees', 'sites', 'gst']);
+  assert.ok(!/Postpaid/.test(note.text), note.text);
+  const retail = buildQuote({ profile: { ...DEFAULTS, business: 'retail', employees: 3 }, catalogue, gstVerified: false });
+  for (const id of retail.locked) assert.equal(byId.get(id).requires_gstin, 'Y');
 });

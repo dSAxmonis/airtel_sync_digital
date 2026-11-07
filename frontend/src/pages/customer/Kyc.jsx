@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ShieldCheck, Check, X, AlertTriangle, Upload, Eye, Loader2, ArrowRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ShieldCheck, Check, X, AlertTriangle, Upload, Eye, Loader2, ArrowRight, Landmark, FileCheck2, Sparkles } from 'lucide-react';
 import UnregisteredPanel from '../../components/kyc/UnregisteredPanel.jsx';
 import { api, errorMessage } from '../../api/client.js';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -11,7 +11,7 @@ import { longDate, dateTime } from '../../lib/format.js';
 import { Alert, Badge, Button, Callout, Spinner, Steps, STATUS_TONE, useToast, cx } from '../../components/ui.jsx';
 import OnboardingStepper from '../../components/OnboardingStepper.jsx';
 
-const DOCS = [['Address proof', true], ['Signatory ID', true], ['GST certificate', false], ['Udyam certificate', false]];
+const DOCS = [['Address proof', true], ['Signatory ID', true], ['Authority letter', 'conditional'], ['GST certificate', false], ['Udyam certificate', false]];
 // Unregistered: a bill, plus a shop licence or a shop-front photo (either one is enough).
 const UNREGISTERED_DOCS = [['Address proof', true], ['Shop licence', 'oneOf'], ['Shop photo', 'oneOf']];
 
@@ -43,6 +43,11 @@ export default function Kyc() {
   const [helpSent, setHelpSent] = useState(false);
   const [choice, setChoice] = useState(null);
   const [showAll, setShowAll] = useState(false);
+  const [pan, setPan] = useState('');
+  const [bank, setBank] = useState({ ifsc: '', account: '' });
+  const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const completing = useRef(false);
 
   const load = async () => {
     const [{ data: me }, { data: mine }] = await Promise.all([api.get('/business/me'), api.get('/orders/mine')]);
@@ -54,6 +59,17 @@ export default function Kyc() {
       .then(([{ data: me }, { data: mine }]) => { setData(me); setOrders(mine.orders); })
       .catch(error => toast(errorMessage(error), 'error'));
   }, [toast]);
+
+  // Back from DigiLocker with an authorization code: exchange it on the server (PKCE-checked) for signed documents.
+  useEffect(() => {
+    const code = params.get('code'), state = params.get('state');
+    if (params.get('digilocker') !== 'done' || !code || completing.current) return;
+    completing.current = true;
+    api.post('/kyc/digilocker/complete', { state, code })
+      .then(({ data: result }) => { setData(current => (current ? { ...current, business: result.business } : current)); toast(result.linked ? t('dl.linked') : t('dl.personOnly')); })
+      .catch(error => toast(errorMessage(error), 'error'))
+      .finally(() => setParams({}, { replace: true }));
+  }, [params, setParams, t, toast]);
 
   const run = async (key, task) => {
     setBusy(key);
@@ -115,6 +131,16 @@ export default function Kyc() {
       await addDocument(SPECIMEN_TYPE[name.slice(4, -4)], new File([blob], name, { type: 'image/png' }));
     }
   });
+  const startDigiLocker = () => run('digilocker', async () => { const { data: started } = await api.post('/kyc/digilocker/start'); navigate(started.authorizeUrl); });
+  const verifyPan = event => { event.preventDefault(); run('pan', async () => { const { data: result } = await api.post('/kyc/ownership/pan', { pan }); setBusiness(result.business); toast(t('own.panOk', { name: result.pan.name })); }); };
+  const verifyBank = event => { event.preventDefault(); run('bank', async () => { const { data: result } = await api.post('/kyc/ownership/bank', bank); setBusiness(result.business); toast(t('own.bankOk', { holder: result.bank.holder })); await refresh(); }); };
+  // Demo only: the simulated PAN and bank records for this case-pack business.
+  const demoFill = () => run('demo-fill', async () => {
+    const { data: ids } = await api.get('/kyc/demo-identities');
+    if (ids.forThisBusiness?.pan && !data.business.ownership?.pan) setPan(ids.forThisBusiness.pan);
+    if (ids.forThisBusiness?.account) setBank({ ifsc: ids.forThisBusiness.ifsc, account: ids.forThisBusiness.account });
+    else toast(t('own.noDemo'), 'error');
+  });
   const askReview = () => run('review', async () => { const { data: result } = await api.post('/kyc/request-review'); setBusiness(result.business); toast(t('kyc.reviewSent')); });
   const askHelp = () => run('help', async () => { await api.post('/kyc/registration-help'); setHelpSent(true); });
   const loadShopSample = () => run('specimen', async () => {
@@ -136,6 +162,9 @@ export default function Kyc() {
   const openRequests = business.kyc.reviewRequests.filter(request => !request.resolved);
 
   // Step states: done steps fold to one line; only the step in front of the owner opens.
+  const needsAuthority = business.kyc.missing.includes('Authority letter') || Boolean(docOf('Authority letter'));
+  const owned = Boolean(business.ownership?.verifiedAt);
+  const ownershipDone = verified || owned;
   const consentDone = verified || Boolean(data.consent);
   const businessDone = verified || (unregistered ? Boolean(business.ownerKyc && business.registration?.declared) : Boolean(registryOk));
   const docsDone = verified || status === 'in_review' || (business.documents.length > 0 && !business.kyc.missing.length && !business.documents.some(doc => doc.status === 'fail') && !['action_needed', 'registry_needed'].includes(status));
@@ -144,6 +173,7 @@ export default function Kyc() {
   const consentState = stateOf(consentDone, true);
   const businessState = stateOf(businessDone, consentDone);
   const docsState = stateOf(docsDone, consentDone && (businessDone || Boolean(mode)));
+  const ownershipState = stateOf(ownershipDone, consentDone && businessDone);
   const resultState = verified ? 'done' : status === 'action_needed' ? 'blocked' : docsDone ? 'current' : 'todo';
   const registryName = [business.gst && `${business.gst.tradeName} · GSTIN ${business.gst.masked}`, business.udyam && `${business.udyam.enterpriseName} · Udyam ${business.udyam.masked}`].filter(Boolean).join(' / ');
 
@@ -170,8 +200,44 @@ export default function Kyc() {
     </div>
   );
 
+  const digiLockerCard = !verified && (
+    <div className="flex flex-col gap-3 rounded-xl border border-[#c9d4ee] bg-[#f3f6fd] p-4 sm:flex-row sm:items-center">
+      <span className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#1d3f8f] text-white"><FileCheck2 className="h-5 w-5" /></span>
+      <div className="flex-1"><p className="font-semibold text-[#1d3f8f]">{t('dl.title')}</p><p className="text-sm text-ink-muted">{t('dl.body')}</p></div>
+      <Button loading={busy === 'digilocker'} disabled={!data.consent} onClick={startDigiLocker}>{t('dl.cta')}<ArrowRight className="h-4 w-4" /></Button>
+    </div>
+  );
+
+  const ownershipBody = (
+    <div className="max-w-3xl space-y-4">
+      <p className="text-sm text-ink-muted">{t('own.why')}</p>
+      {owned ? (
+        <div className="flex items-start gap-2 border-l-2 border-ok-600 py-1 pl-3 text-sm"><Check className="mt-0.5 h-4 w-4 flex-none text-ok-600" /><p>{business.ownership.method === 'digilocker' ? t('own.byDigiLocker', { role: business.ownership.role || '' }) : t('own.byBank', { holder: business.ownership.bank?.holder || '', account: business.ownership.bank?.masked || '' })}</p></div>
+      ) : (
+        <>
+          {digiLockerCard}
+          <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">{t('own.or')}</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <form className="space-y-2" onSubmit={verifyPan}>
+              <p className="label">{t('own.pan')} {business.ownership?.pan && <span className="font-normal text-ok-700">· {business.ownership.pan.masked} · {business.ownership.pan.name} ✓</span>}</p>
+              <div className="flex gap-2"><input className="input font-mono uppercase" maxLength={10} placeholder="ABCDE1234F" value={pan} disabled={!data.consent || Boolean(business.ownership?.pan)} onChange={event => setPan(event.target.value.toUpperCase())} /><Button type="submit" variant="secondary" loading={busy === 'pan'} disabled={!pan || Boolean(business.ownership?.pan)}>{t('kyc.check')}</Button></div>
+              <p className="text-xs text-ink-muted">{t('own.panHint')}</p>
+            </form>
+            <form className="space-y-2" onSubmit={verifyBank}>
+              <p className="label flex items-center gap-1.5"><Landmark className="h-4 w-4" />{t('own.bank')}</p>
+              <div className="grid grid-cols-[1fr_1.3fr] gap-2"><input className="input font-mono uppercase" maxLength={11} placeholder="IFSC" value={bank.ifsc} onChange={event => setBank({ ...bank, ifsc: event.target.value.toUpperCase() })} /><input className="input font-mono" inputMode="numeric" placeholder={t('own.account')} value={bank.account} onChange={event => setBank({ ...bank, account: event.target.value.replace(/\D/g, '') })} /></div>
+              <div className="flex flex-wrap gap-2"><Button type="submit" variant="secondary" loading={busy === 'bank'} disabled={!bank.ifsc || !bank.account || (business.gst && !business.ownership?.pan)}>{t('own.bankCta')}</Button><Button type="button" variant="ghost" size="sm" loading={busy === 'demo-fill'} onClick={demoFill}>{t('own.demo')}</Button></div>
+              <p className="text-xs text-ink-muted">{t('own.bankHint')}</p>
+            </form>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   const registeredBody = (
     <div className="space-y-4">
+      {!registryOk && digiLockerCard}
       {registryMismatch && <Alert tone="error" title={t('kyc.mismatchTitle')}>{t('kyc.mismatchBody')}</Alert>}
       <div className="grid gap-5 md:grid-cols-2">
         {[['gstin', t('kyc.gst'), t('kyc.gstHint'), gstin, setGstin, business.gst], ['udyam', t('kyc.udyam'), t('kyc.udyamHint'), udyam, setUdyam, business.udyam]].filter(([kind, , , , , record]) => record || kind === 'gstin' || business.gst?.status !== 'Active').map(([kind, label, hint, value, setValue, record]) => (
@@ -217,7 +283,7 @@ export default function Kyc() {
         )}
       </div>
       <ul className="divide-y divide-line rounded-lg border border-line bg-white">
-        {docs.map(([type, required]) => {
+        {docs.filter(([, required]) => required !== 'conditional' || needsAuthority).map(([type, required]) => {
           const doc = docOf(type);
           const isReading = reading[type];
           const checks = doc?.checks.filter(check => check.label !== 'Document read') || [];
@@ -226,7 +292,9 @@ export default function Kyc() {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <div className="min-w-[10rem] flex-1">
                   <p className="font-medium">{t(`doc.${type}`)}</p>
-                  <p className="text-[13px] text-ink-muted">{required === true ? t('common.required') : required === 'oneOf' ? t('ureg.oneOf') : t('common.optional')}</p>
+                  <p className="text-[13px] text-ink-muted">{required === true || required === 'conditional' ? t('common.required') : required === 'oneOf' ? t('ureg.oneOf') : t('common.optional')}{required === 'conditional' ? ` · ${t('own.letterWhy')}` : ''}</p>
+                  {doc?.source === 'digilocker' && <p className="mt-0.5 flex items-center gap-1 text-[12px] font-medium text-[#1d3f8f]"><FileCheck2 className="h-3.5 w-3.5" />{t('dl.badge', { issuer: doc.issued?.issuer || '' })}</p>}
+                  {doc?.source === 'upload' && doc.ai && <p className="mt-0.5 flex items-center gap-1 text-[12px] text-ink-muted"><Sparkles className="h-3.5 w-3.5" />{t('kyc.readTwice')}</p>}
                 </div>
                 <div className="text-sm">
                   {isReading ? <span className="flex items-center gap-1.5 text-ink-muted"><Loader2 className="h-4 w-4 animate-spin" />{t('kyc.reading')}</span>
@@ -246,13 +314,14 @@ export default function Kyc() {
           );
         })}
       </ul>
-      {business.kyc.missing.length > 0 && business.documents.length > 0 && <p className="mt-3 text-sm text-warn-700">{business.kyc.missing.map(type => t(`doc.${type}`)).join(', ')}: {t('common.required')}</p>}
+      {business.kyc.missing.filter(type => type !== 'Ownership proof').length > 0 && business.documents.length > 0 && <p className="mt-3 text-sm text-warn-700">{business.kyc.missing.filter(type => type !== 'Ownership proof').map(type => t(`doc.${type}`)).join(', ')}: {t('common.required')}</p>}
     </div>
   );
 
   const steps = [
     { key: 'consent', state: consentState, title: t('kyc.consentTitle'), summary: consentDone && !open(consentState, 'consent') ? (data.consent ? t('kyc.consentActive', { time: dateTime(data.consent.expiresAt) }) : t('kyc.p1')) : null, aside: data.consent && !verified && <button className="text-sm text-ink-muted underline hover:text-ink" onClick={() => consent(false)}>{t('kyc.withdraw')}</button>, children: open(consentState, 'consent') && consentBody },
     { key: 'business', state: businessState, title: unregistered ? t('ureg.stepOwner') : t('kyc.step1'), summary: businessDone && !unregistered ? registryName : businessDone ? business.name : !mode && businessState === 'current' ? t('ureg.question') : null, aside: mode && !businessDone && businessState !== 'todo' && <button className="text-sm text-ink-muted underline hover:text-ink" onClick={() => setChoice(null)}>{t('ureg.question')}</button>, children: open(businessState, 'business') && (!mode ? choiceBody : unregistered ? <UnregisteredPanel business={business} consent={Boolean(data.consent)} verified={verified} onBusiness={result => { setBusiness(result); refresh(); }} onSwitch={() => setChoice('registered')} /> : registeredBody) },
+    ...(unregistered ? [] : [{ key: 'ownership', state: ownershipState, title: t('own.title'), summary: owned && !open(ownershipState, 'ownership') ? (business.ownership.method === 'digilocker' ? 'DigiLocker' : `${t('own.bank')} ${business.ownership.bank?.masked || ''}`) : null, children: open(ownershipState, 'ownership') && ownershipBody }]),
     { key: 'docs', state: docsState, title: t('kyc.docs'), summary: business.documents.length ? business.documents.map(doc => t(`doc.${doc.type}`)).join(' · ') : null, children: open(docsState, 'docs') && docsBody },
     { key: 'result', state: resultState, title: t('kyc.step3'), summary: verified ? `${t('kyc.verifiedTitle')} · ${t(`tier.${business.kyc.tier}`)}` : status === 'in_review' ? t('kyc.reviewSent') : status === 'action_needed' ? t('kycs.action_needed') : null, aside: status === 'action_needed' && <Button variant="secondary" size="sm" loading={busy === 'review'} onClick={askReview}>{t('kyc.askReview')}</Button> },
   ];

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { understand } from '../libs/advisorNlu.js';
-import { advisorAvailable, advisorTurn, AdvisorUnavailable } from '../libs/advisorAI.js';
+import { advisorAvailable, advisorProvider, advisorTurn, AdvisorUnavailable } from '../libs/advisorAI.js';
 import { normaliseProfile } from '../libs/pricing.js';
 import { getCatalogue } from '../services/reference.js';
 
@@ -9,7 +9,7 @@ let aiEnabled = null;
 
 export function status(req, res) {
   aiEnabled ??= advisorAvailable();
-  res.json({ ai: aiEnabled });
+  res.json({ ai: aiEnabled, provider: aiEnabled ? advisorProvider() : 'rules' });
 }
 
 const bodySchema = z.object({
@@ -29,7 +29,7 @@ export async function message(req, res) {
     try {
       const turn = await advisorTurn({ catalogue: await getCatalogue(), language: body.language, messages: [...body.history, { from: 'user', text: body.text }], profile: normaliseProfile(body.profile) });
       const updates = Object.fromEntries(Object.entries(turn.profile_updates || {}).filter(([, value]) => value !== null).map(([key, value]) => [key, key === 'spend' ? String(value) : value]));
-      return res.json({ mode: 'ai', reply: turn.reply, updates, found: Object.keys(updates), wants: turn.wants || [], budget: turn.budget ?? null, recognized: true, ready: turn.ready });
+      return res.json({ mode: 'ai', model: turn.model, clarify: turn.clarify || null, reply: turn.reply, updates, found: Object.keys(updates), wants: turn.wants || [], budget: turn.budget ?? null, recognized: true, ready: turn.ready });
     } catch (error) {
       if (!(error instanceof AdvisorUnavailable)) throw error;
       if (/not configured/.test(error.message)) aiEnabled = false;

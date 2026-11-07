@@ -12,6 +12,7 @@ const Track = lazy(() => import('./pages/public/Track.jsx'));
 const Privacy = lazy(() => import('./pages/public/Privacy.jsx'));
 const WhatsApp = lazy(() => import('./pages/public/WhatsApp.jsx'));
 const NotFound = lazy(() => import('./pages/public/NotFound.jsx'));
+const DigiLocker = lazy(() => import('./pages/public/DigiLocker.jsx'));
 const Dashboard = lazy(() => import('./pages/customer/Dashboard.jsx'));
 const Kyc = lazy(() => import('./pages/customer/Kyc.jsx'));
 const UdyamGuide = lazy(() => import('./pages/customer/UdyamGuide.jsx'));
@@ -73,6 +74,7 @@ export default function App() {
           <Route path="whatsapp" element={<WhatsApp />} />
         </Route>
         <Route path="staff/login" element={<StaffLogin />} />
+        <Route path="digilocker/authorize" element={<RequireRole roles={['customer']}><DigiLocker /></RequireRole>} />
         <Route path="app" element={<RequireRole roles={['customer']}><AppLayout /></RequireRole>}>
           <Route index element={<Dashboard />} />
           <Route path="kyc" element={<Kyc />} />

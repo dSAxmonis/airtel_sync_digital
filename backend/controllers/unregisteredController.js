@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { User } from '../models/index.js';
 import { aadhaarValid, normalizeAadhaar } from '../libs/aadhaar.js';
+import { uidaiResident } from '../libs/mockGov.js';
 import { hmac, maskPhone, sha256 } from '../libs/security.js';
 import { documentSvg, shopPhotoSvg } from '../libs/specimenArt.js';
 import { issueOtp, verifyOtp } from '../services/otp.js';
@@ -43,7 +44,9 @@ export async function declare(req, res) {
   res.json({ business: presentBusiness(business) });
 }
 
-// Aadhaar e-KYC (simulated, like e-sign and UPI): an OTP goes to the Aadhaar-linked mobile; the number is never stored.
+// Aadhaar e-KYC (UIDAI simulated in libs/mockGov.js): the OTP goes to the mobile registered with UIDAI, and the
+// name and year of birth come from UIDAI's response, never from what the applicant typed. The number is never
+// stored: only the last 4 digits and a keyed reference used to stop one Aadhaar being used by two owners.
 const otpTarget = (req, aadhaar) => `${req.user._id}:${hmac(`aadhaar:${aadhaar}`)}`;
 const aadhaarSchema = z.object({ aadhaar: z.string().transform(normalizeAadhaar).refine(aadhaarValid, 'That is not a valid Aadhaar number. Check the 12 digits.') });
 
@@ -51,8 +54,10 @@ export async function requestAadhaarOtp(req, res) {
   const { aadhaar } = aadhaarSchema.parse(req.body);
   const business = await consentedBusiness(req);
   lockedIfVerified(business);
+  const resident = await uidaiResident(aadhaar, {}, { enrol: false });
   const { devCode } = await issueOtp('aadhaar', otpTarget(req, aadhaar));
-  res.json({ sentTo: maskPhone(req.user.phone), devCode });
+  // A resident not yet known to the simulated UIDAI is enrolled with this account's phone on verification.
+  res.json({ sentTo: resident ? `XXXXXX${resident.mobileLast4}` : maskPhone(req.user.phone), uidaiMobile: true, devCode });
 }
 
 export async function verifyAadhaar(req, res) {
@@ -61,11 +66,10 @@ export async function verifyAadhaar(req, res) {
   const business = await consentedBusiness(req);
   lockedIfVerified(business);
   await verifyOtp('aadhaar', otpTarget(req, aadhaar), code);
-  if (!req.user.name && name) { await User.updateOne({ _id: req.user._id }, { $set: { name } }); req.user.name = name; }
-  // A real e-KYC response returns the resident's name, year of birth and address. The simulation returns the name on
-  // this account, so a licence or bill in someone else's name is still caught by the document checks.
-  const seed = parseInt(sha256(aadhaar).slice(0, 6), 16);
-  business.set('ownerKyc', { method: 'aadhaar_otp', last4: aadhaar.slice(-4), name: req.user.name, yearOfBirth: 1962 + (seed % 40), verifiedAt: new Date() });
+  const resident = await uidaiResident(aadhaar, { name: req.user.name || name, phone: req.user.phone });
+  // The account takes the name UIDAI holds for this Aadhaar.
+  if (req.user.name !== resident.name) { await User.updateOne({ _id: req.user._id }, { $set: { name: resident.name } }); req.user.name = resident.name; }
+  business.set('ownerKyc', { method: 'aadhaar_otp', last4: aadhaar.slice(-4), name: resident.name, yearOfBirth: resident.yearOfBirth, verifiedAt: new Date(), aadhaarRef: hmac(`aadhaar:${aadhaar}`), mobileLast4: resident.mobileLast4 });
   await business.save();
   await evaluateBusiness(business, { trigger: 'registry' });
   await audit(req.user, 'kyc.aadhaar_ekyc', 'Business', business._id, { last4: aadhaar.slice(-4) });
@@ -108,7 +112,7 @@ export async function startUdyamAssist(req, res) {
 export async function demoDocument(req, res) {
   const business = await ensureBusiness(req.user);
   const declared = business.registration?.declared || {};
-  const shop = declared.name || 'Lakshmi Tailoring', owner = req.user.name || 'Account holder';
+  const shop = declared.name || 'Lakshmi Tailoring', owner = business.ownerKyc?.name || req.user.name || 'Account holder';
   const address = declared.address ? `${declared.address}, ${declared.city || ''}, ${declared.state || ''}` : '12, Gandhi Road, Pune, Maharashtra - 411001';
   const kind = req.params.kind;
   const svg = kind === 'licence' ? documentSvg('Shop licence', { licence_number: 'SE-2024-118822', business_name: shop, owner_name: owner, address, valid_till: '2028-03-31' })

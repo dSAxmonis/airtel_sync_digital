@@ -112,10 +112,15 @@ export async function failJob(req, res) {
 export async function updateChecklist(req, res) {
   const job = await myJob(req);
   if (job.status !== 'in_progress') throw new HttpError(409, 'Start the job first.');
-  const body = z.object({ installed: z.boolean().optional(), speedMbps: z.number().min(0).max(10000).optional(), notes: z.string().max(300).optional() }).parse(req.body);
+  const body = z.object({ installed: z.boolean().optional(), speedMbps: z.number().min(0).max(10000).optional(), notes: z.string().max(300).optional(), premises: z.object({ lat: z.number().min(6).max(38), lng: z.number().min(68).max(98), accuracy: z.number().min(0).max(5000), addressConfirmed: z.boolean(), signboardMatches: z.boolean(), source: z.enum(['gps', 'demo']).default('gps') }).optional() }).parse(req.body);
   if (body.installed) { job.checklist.installedAt = new Date(); log(job, 'in_progress', 'Equipment installed', req.user); }
   if (body.speedMbps !== undefined) { job.checklist.speedMbps = body.speedMbps; log(job, 'in_progress', `Speed test: ${body.speedMbps} Mbps`, req.user); }
   if (body.notes !== undefined) job.checklist.notes = body.notes;
+  if (body.premises) {
+    if (body.premises.accuracy > 200) throw new HttpError(422, 'The location fix is not precise enough (over 200 m). Step outside and try again.');
+    job.checklist.premises = { ...body.premises, at: new Date() };
+    log(job, 'in_progress', `Premises verified at ${body.premises.lat.toFixed(5)}, ${body.premises.lng.toFixed(5)} (±${Math.round(body.premises.accuracy)} m)${body.premises.addressConfirmed ? '' : ' · address NOT confirmed'}`, req.user);
+  }
   await job.save();
   res.json({ job: await presentJob(job) });
 }
@@ -152,6 +157,8 @@ export async function requestSignoff(req, res) {
   const job = await myJob(req);
   if (job.type !== 'installation' || job.status !== 'in_progress') throw new HttpError(409, 'Installation is not in progress.');
   if (!job.checklist.installedAt || job.checklist.speedMbps === undefined || !job.checklist.photoKey) throw new HttpError(409, 'Complete the checklist first: installed, speed test and photo.');
+  // The connection is switched on only at verified premises.
+  if (!job.checklist.premises?.at || !job.checklist.premises.addressConfirmed || !job.checklist.premises.signboardMatches) throw new HttpError(409, 'Verify the premises first: a geotagged check-in, with the address and the business signboard confirmed.', { code: 'premises_unverified' });
   const order = await Order.findById(job.order);
   const { code } = await issueOtp('install', String(order._id));
   order.handover = { ...(order.handover || {}), install: encrypt(code) };

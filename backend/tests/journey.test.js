@@ -44,7 +44,7 @@ test('owner signs in with OTP, saves a quote and places an order before verifica
   await loginCustomer(owner, '9811100001', 'Joseph Joshi');
   const quote = await owner.post('/quotes', { profile: { business: 'retail', employees: 3, sites: 1, tier: '1', gstin: 'yes', current: 'hotspot', goal: 'operations' } });
   assert.deepEqual(quote.body.quote.result.items.map(item => item.productId), ['P04', 'P18'], 'unverified: non-GST bundle');
-  assert.ok(quote.body.quote.result.notes.some(note => note.code === 'gst_unlocks'));
+  assert.ok(!quote.body.quote.result.notes.some(note => note.code === 'gst_unlocks'), 'none of the retail GST-bundle products legally needs a GSTIN');
   await owner.post(`/quotes/${quote.body.quote.id}/save`);
   const order = await owner.post('/orders', { quoteId: quote.body.quote.id });
   assert.equal(order.status, 201);
@@ -60,11 +60,36 @@ test('KYC: consent first, registry lookup, documents, verified once', async () =
   assert.equal(lookup.body.active, true);
   assert.ok(!lookup.text.includes(GSTIN), 'full GSTIN never returned');
   assert.equal(lookup.body.business.kyc.status, 'documents_needed');
-  await upload(owner, 'Address proof', { billed_to: 'Star Electronics', address: 'Shop/Unit 4, Lake View Colony, Chennai, Tamil Nadu - 304733', bill_date: '2026-07-01' });
-  const done = await upload(owner, 'Signatory ID', { name: 'Joseph Joshi', designation: 'Owner', for_business: 'Star Electronics', id_number: 'SYN-ID-1', valid_till: '2029-01-01' });
+  // A forged upload: a bill photo sent as a "Signatory ID" with typed-in details. The server reads the file itself,
+  // so the typed details are ignored and the document fails.
+  const forged = await upload(owner, 'Signatory ID', { name: 'Joseph Joshi', designation: 'Owner', for_business: 'Star Electronics', id_number: 'SYN-ID-1', valid_till: '2029-01-01' });
+  assert.equal(forged.status, 201);
+  const forgedDoc = forged.body.business.documents.find(doc => doc.type === 'Signatory ID');
+  assert.equal(forgedDoc.status, 'fail', 'typed-in details are not trusted');
+  assert.ok(forgedDoc.checks.some(check => /device differ/.test(check.label)), 'the mismatch with what the device sent is flagged');
+  assert.notEqual(forged.body.business.kyc.status, 'verified');
+  state.docId = forgedDoc.id;
+  // Without proof of control (DigiLocker or a bank account in the business name), a public GSTIN is not enough.
+  assert.ok(forged.body.business.kyc.missing.includes('Ownership proof'));
+  // DigiLocker: OAuth + PKCE consent, OTP to the UIDAI-registered mobile, issuer-signed documents.
+  const start = (await owner.post('/kyc/digilocker/start')).body;
+  const stateParam = new URL(start.authorizeUrl, 'http://x').searchParams.get('state');
+  const signin = await owner.post('/digilocker-sim/signin', { state: stateParam, aadhaar: '730001666596' });
+  assert.equal(signin.body.sentTo, 'XXXXXX0001');
+  const listed = await owner.post('/digilocker-sim/verify', { state: stateParam, code: signin.body.devCode });
+  assert.deepEqual(listed.body.documents.map(doc => doc.docType).sort(), ['GST registration certificate', 'PAN', 'Udyam registration certificate', 'e-Aadhaar']);
+  const consent = await owner.post('/digilocker-sim/consent', { state: stateParam, uris: listed.body.documents.map(doc => doc.uri) });
+  const code = new URL(consent.body.redirect, 'http://x').searchParams.get('code');
+  assert.equal((await owner.post('/kyc/digilocker/complete', { state: stateParam, code: 'wrong' })).status, 409);
+  // The failed upload is removed by the owner; it stays on record in the history.
+  await owner.del('/kyc/documents/Signatory ID');
+  const done = await owner.post('/kyc/digilocker/complete', { state: stateParam, code });
+  assert.ok(done.body.shared.every(doc => doc.signatureVerified), 'issuer signatures verified');
+  assert.equal(done.body.business.ownership.method, 'digilocker');
+  assert.equal(done.body.business.documentHistory.length, 1, 'the failed upload stays on record');
+  assert.equal((await owner.post('/kyc/digilocker/complete', { state: stateParam, code })).status, 409, 'a code works once');
   assert.equal(done.body.business.kyc.status, 'verified');
   assert.equal(done.body.business.kyc.tier, 'gst');
-  state.docId = done.body.business.documents[0].id;
   const order = await owner.get(`/orders/${state.order.id}`);
   assert.equal(order.body.order.status, 'awaiting_signature', 'waiting order moves on after verification');
   const upgrade = order.body.order.gstUpgrade;
@@ -153,12 +178,15 @@ test('a state-changing request from another website is refused (CSRF)', async ()
 });
 
 test('documents are visible only to the owner and KYC/ops staff (audited)', async () => {
-  assert.equal((await owner.raw(`/documents/${state.docId}/file`)).status, 200);
+  const sneha = server.actor();
+  await loginCustomer(sneha, '9876500001');
+  const docId = (await sneha.get('/business/me')).body.business.documents.find(doc => doc.hasFile).id;
+  assert.equal((await sneha.raw(`/documents/${docId}/file`)).status, 200);
   const other = server.actor();
   await loginCustomer(other, '9811100002');
-  assert.equal((await other.get(`/documents/${state.docId}/file`)).status, 403);
+  assert.equal((await other.get(`/documents/${docId}/file`)).status, 403);
   await loginDemo(officer, 'priya.kyc@udyam.demo');
-  assert.equal((await officer.raw(`/documents/${state.docId}/file`)).status, 200);
+  assert.equal((await officer.raw(`/documents/${docId}/file`)).status, 200);
 });
 
 test('e-sign with a one-time code, then UPI payment with failures routed to a partner', async () => {
@@ -174,8 +202,13 @@ test('e-sign with a one-time code, then UPI payment with failures routed to a pa
   assert.ok(failed, 'Chennai partner gets the failed payment');
   assert.equal(failed.contact.phone, '••••••0001', 'masked in the list');
   assert.equal((await partner.get(`/partner/cases/${failed.id}`)).body.case.contact.phone, '9811100001', 'assigned partner can call the owner');
-  const paid = await owner.post(`/orders/${id}/pay`, { simulate: 'success', autopay: true });
-  assert.equal(paid.body.order.status, 'awaiting_slot');
+  // Two taps on "Pay" at once: exactly one payment is recorded.
+  const [first, second] = await Promise.all([owner.post(`/orders/${id}/pay`, { simulate: 'success', autopay: true }, { 'idempotency-key': 'pay-1' }), owner.post(`/orders/${id}/pay`, { simulate: 'success', autopay: true }, { 'idempotency-key': 'pay-1' })]);
+  assert.ok([first, second].some(response => response.status === 200 && response.body.order.status === 'awaiting_slot'));
+  const again = await owner.post(`/orders/${id}/pay`, { simulate: 'success' }, { 'idempotency-key': 'pay-1' });
+  assert.equal(again.body.idempotent, true, 'a retried payment returns the first result');
+  const order = (await owner.get(`/orders/${id}`)).body.order;
+  assert.equal(order.payments.filter(payment => payment.status === 'success').length, 1, 'charged once');
 });
 
 test('slot booking creates the kit and field jobs; warehouse packs; delivery confirmed by code', async () => {
@@ -219,6 +252,10 @@ test('technician installs, customer signs off, the line goes live with one bill'
   const retake = new FormData(); retake.append('file', file(), 'install-2.png');
   await tech.post(`/field/jobs/${job.id}/photo`, retake);
   assert.ok((await tech.get(`/field/jobs/${job.id}`)).body.job.history.some(entry => entry.note === 'Installation photo retaken'));
+  // No sign-off (and so no activation) until the premises are verified with a geotagged visit.
+  assert.equal((await tech.post(`/field/jobs/${job.id}/signoff`)).body.details.code, 'premises_unverified');
+  assert.equal((await tech.patch(`/field/jobs/${job.id}/checklist`, { premises: { lat: 13.0827, lng: 80.2707, accuracy: 900, addressConfirmed: true, signboardMatches: true } })).status, 422, 'imprecise fix refused');
+  await tech.patch(`/field/jobs/${job.id}/checklist`, { premises: { lat: 13.0827, lng: 80.2707, accuracy: 15, addressConfirmed: true, signboardMatches: true } });
   assert.equal((await tech.post(`/field/jobs/${job.id}/signoff`)).body.sent, true);
   const code = (await owner.get(`/orders/${id}`)).body.order.installCode;
   assert.equal((await tech.post(`/field/jobs/${job.id}/complete`, { code })).body.job.status, 'done');

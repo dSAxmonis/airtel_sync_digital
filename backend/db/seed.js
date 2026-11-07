@@ -55,6 +55,8 @@ const STAFF = [
   { role: 'technician', name: 'Suresh Patil', email: 'suresh.tech@udyam.demo', region: { cities: ['Nagpur', 'Mumbai', 'Pune', 'Vadodara', 'Ahmedabad', 'Surat'] } },
   { role: 'technician', name: 'Karthik N', email: 'karthik.tech@udyam.demo', region: { cities: ['Visakhapatnam', 'Hyderabad', 'Chennai', 'Kochi', 'Bengaluru', 'Delhi', 'Ludhiana', 'Kolkata'] } },
   { role: 'kyc_officer', name: 'Priya Nair', email: 'priya.kyc@udyam.demo' },
+  // A second officer: approvals that override checks need a different person to confirm (maker-checker).
+  { role: 'kyc_officer', name: 'Rahul Verma', email: 'rahul.kyc@udyam.demo' },
   { role: 'ops_admin', name: 'Vikram Mehta', email: 'vikram.ops@udyam.demo' },
 ];
 
@@ -99,6 +101,18 @@ async function makeBusiness(owner, key, { city, language = 'en-IN', profile }) {
     const storageKey = `kyc/${business._id}/${type.toLowerCase().replace(/\s+/g, '-')}-seed.${specimen ? 'png' : 'svg'}`;
     await putObject(storageKey, buffer, mime);
     business.documents.push({ type, storageKey, mime, size: buffer.length, confidence: 94, fields: spec[type], uploadedAt: new Date() });
+  }
+  // Proof of control from the simulated providers: a ₹1 bank check for proprietors, the DigiLocker link
+  // (issuer-confirmed partner or director) for LLPs and companies.
+  const directory = JSON.parse(fs.readFileSync(path.join(config.dataDir, 'mock_gov_directory.json'), 'utf8'));
+  const resident = directory.residents.find(item => item.links.some(link => link.gstin === spec.gstin));
+  const link = resident?.links.find(item => item.gstin === spec.gstin);
+  const account = directory.bankAccounts.find(item => item.holder === row.trade_name || item.business === row.trade_name);
+  if (link?.role === 'Proprietor' && account) {
+    business.ownership = { method: 'bank', role: 'Proprietor', verifiedAt: new Date(), pan: { masked: `${spec.gstin.slice(2, 4)}XXX${spec.gstin.slice(7, 11)}${spec.gstin[11]}`, hash: hmac(`pan:${spec.gstin.slice(2, 12)}`), name: resident.name, verifiedAt: new Date() }, bank: { masked: `XXXX${account.account.slice(-4)}`, hash: hmac(`bank:${account.ifsc}:${account.account}`), ifsc: account.ifsc, holder: account.holder, verifiedAt: new Date() } };
+  } else if (link) {
+    business.ownership = { method: 'digilocker', role: link.role, verifiedAt: new Date() };
+    business.ownerKyc = { method: 'digilocker', last4: resident.aadhaar.slice(-4), name: resident.name, yearOfBirth: resident.yearOfBirth, verifiedAt: new Date(), aadhaarRef: hmac(`aadhaar:${resident.aadhaar}`) };
   }
   await business.save();
   await evaluateBusiness(business, { trigger: 'seed' });
@@ -163,7 +177,7 @@ async function completeDemoChecklist(job, order, done) {
       await putObject(key, Buffer.from(installationSvg({ business: business?.name, kit: order.kit, speedMbps: job.checklist.speedMbps || 96 })), 'image/svg+xml');
       Object.assign(job.checklist, { photoKey: key, photoMime: 'image/svg+xml', photoAt: at });
     }
-    Object.assign(job.checklist, { installedAt: job.checklist.installedAt || at, speedMbps: job.checklist.speedMbps || 96, signedOffAt: job.checklist.signedOffAt || at });
+    Object.assign(job.checklist, { installedAt: job.checklist.installedAt || at, speedMbps: job.checklist.speedMbps || 96, signedOffAt: job.checklist.signedOffAt || at, premises: job.checklist.premises?.at ? job.checklist.premises : { lat: 30.9010, lng: 75.8573, accuracy: 12, at, addressConfirmed: true, signboardMatches: true, source: 'demo' } });
     Object.assign(job, { status: 'done', completedAt: job.completedAt || at });
   } else job.status = 'in_progress';
   await job.save();

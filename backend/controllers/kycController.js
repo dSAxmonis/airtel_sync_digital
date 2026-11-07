@@ -10,6 +10,7 @@ import { config } from '../libs/config.js';
 import { gstRow, udyamRow } from '../services/reference.js';
 import { evaluateBusiness, activeConsent, afterKycChange, registryGst, registryUdyam, syncIdentity } from '../services/kycService.js';
 import { ensureBusiness } from './quoteController.js';
+import { readDocument } from '../services/documentReader.js';
 import { audit } from '../services/audit.js';
 import { HttpError } from '../middlewares/error.js';
 
@@ -23,11 +24,19 @@ export function presentBusiness(business, { includeFields = true } = {}) {
       status: business.kyc?.status, tier: business.kyc?.tier, verifiedAt: business.kyc?.verifiedAt, expiresAt: business.kyc?.expiresAt, checkedAt: business.kyc?.checkedAt,
       missing: business.kyc?.missing || [], failed: business.kyc?.failed || [], warnings: business.kyc?.warnings || [],
       reviewRequests: (business.kyc?.reviewRequests || []).map(request => ({ docType: request.docType, message: request.message, at: request.at, resolved: Boolean(request.resolvedAt) })),
-      decisions: (business.kyc?.decisions || []).map(decision => ({ decision: decision.decision, note: decision.note, at: decision.at })),
+      decisions: (business.kyc?.decisions || []).map(decision => ({ decision: decision.decision, note: decision.note, at: decision.at, overrides: decision.overrides || [] })),
+      hardStops: business.kyc?.hardStops || 0,
+      pendingApproval: business.kyc?.pendingApproval?.at ? { at: business.kyc.pendingApproval.at, note: business.kyc.pendingApproval.note, overrides: business.kyc.pendingApproval.overrides || [], by: String(business.kyc.pendingApproval.by) } : null,
     },
+    ownership: business.ownership?.verifiedAt || business.ownership?.pan?.verifiedAt ? {
+      method: business.ownership.method || null, role: business.ownership.role, verifiedAt: business.ownership.verifiedAt,
+      pan: business.ownership.pan?.verifiedAt ? { masked: business.ownership.pan.masked, name: business.ownership.pan.name } : null,
+      bank: business.ownership.bank?.verifiedAt ? { masked: business.ownership.bank.masked, ifsc: business.ownership.bank.ifsc, holder: business.ownership.bank.holder } : null,
+    } : null,
+    documentHistory: (business.documentHistory || []).map(doc => ({ type: doc.type, status: doc.status, source: doc.source, uploadedAt: doc.uploadedAt, replacedAt: doc.replacedAt, failed: (doc.checks || []).filter(check => check.status === 'fail').map(check => check.label) })),
     registration: { path: business.registration?.path || null, declared: business.registration?.declared?.name ? { name: business.registration.declared.name, address: business.registration.declared.address, city: business.registration.declared.city, state: business.registration.declared.state, activity: business.registration.declared.activity } : null, udyamAssistStartedAt: business.registration?.udyamAssist?.startedAt || null },
-    ownerKyc: business.ownerKyc?.verifiedAt ? { name: business.ownerKyc.name, aadhaar: `XXXX XXXX ${business.ownerKyc.last4}`, yearOfBirth: business.ownerKyc.yearOfBirth, verifiedAt: business.ownerKyc.verifiedAt } : null,
-    documents: (business.documents || []).map(doc => ({ id: String(doc._id), type: doc.type, mime: doc.mime, size: doc.size, confidence: doc.confidence, status: doc.status, checks: doc.checks, uploadedAt: doc.uploadedAt, hasFile: Boolean(doc.storageKey), fields: includeFields ? doc.fields : undefined })),
+    ownerKyc: business.ownerKyc?.verifiedAt ? { name: business.ownerKyc.name, aadhaar: `XXXX XXXX ${business.ownerKyc.last4}`, yearOfBirth: business.ownerKyc.yearOfBirth, verifiedAt: business.ownerKyc.verifiedAt, method: business.ownerKyc.method } : null,
+    documents: (business.documents || []).map(doc => ({ id: String(doc._id), type: doc.type, mime: doc.mime, size: doc.size, confidence: doc.confidence, status: doc.status, checks: doc.checks, uploadedAt: doc.uploadedAt, hasFile: Boolean(doc.storageKey), source: doc.source || 'upload', issued: doc.issued?.issuer ? { issuer: doc.issued.issuerName, signatureVerified: doc.issued.signatureVerified } : null, ai: doc.reader?.ai?.status === 'read' ? { model: doc.reader.ai.model, tamperSignals: doc.reader.ai.tamperSignals || [] } : null, fields: includeFields ? doc.fields : undefined })),
   };
 }
 
@@ -71,15 +80,18 @@ export async function withdrawConsent(req, res) {
   await Consent.updateMany({ user: req.user._id, business: business._id, withdrawnAt: null }, { $set: { withdrawnAt: new Date() } });
   let erased = 0;
   if (business.kyc.status !== 'verified') {
-    for (const doc of business.documents) { await deleteObject(doc.storageKey).catch(() => {}); erased++; }
+    for (const doc of [...business.documents, ...business.documentHistory]) { if (doc.storageKey) await deleteObject(doc.storageKey).catch(() => {}); erased++; }
     business.documents = [];
+    business.documentHistory = [];
+    business.ownership = undefined;
     business.gst = undefined;
     business.udyam = undefined;
     business.ownerKyc = undefined;
     business.set('registration.declared', undefined);
     business.set('registration.path', null);
     syncIdentity(business);
-    business.kyc = { status: 'not_started', tier: null, missing: [], failed: [], warnings: [], reviewRequests: business.kyc.reviewRequests, decisions: business.kyc.decisions };
+    // A rejection outlives withdrawal: the decision (not the documents) stays on record.
+    business.kyc = { status: business.kyc.status === 'rejected' ? 'rejected' : 'not_started', tier: null, missing: [], failed: [], warnings: [], reviewRequests: business.kyc.reviewRequests, decisions: business.kyc.decisions };
     await business.save();
   }
   await audit(req.user, 'consent.withdrawn', 'Business', business._id, { erasedDocuments: erased });
@@ -113,6 +125,8 @@ export async function removeRegistry(req, res) {
   const business = await myBusiness(req);
   if (business.kyc.status === 'verified') throw new HttpError(409, 'Your business is verified. To change its registration, contact support.', { code: 'registry_locked', kind });
   business[kind] = undefined;
+  // Proof of control was for the old registration.
+  business.ownership = undefined;
   syncIdentity(business);
   await business.save();
   await evaluateBusiness(business, { trigger: 'registry' });
@@ -130,6 +144,7 @@ export async function lookupGstin(req, res) {
   guardRegistry(business, 'gst', hmac(gstin));
   requireSameEnterprise({ gstin, ...row }, registryUdyam(business), 'udyam');
   business.set('registration.path', 'registered');
+  if (business.gst?.gstinHash && business.gst.gstinHash !== hmac(gstin)) business.ownership = undefined;
   business.gst = { gstinEnc: encrypt(gstin), gstinHash: hmac(gstin), masked: maskGstin(gstin), legalName: row.legal_name, tradeName: row.trade_name, constitution: row.constitution, address: row.principal_place_of_business, state: row.state, status: row.status, registrationDate: row.registration_date, verifiedAt: new Date() };
   syncIdentity(business);
   await business.save();
@@ -148,6 +163,7 @@ export async function lookupUdyam(req, res) {
   guardRegistry(business, 'udyam', hmac(number));
   requireSameEnterprise(registryGst(business), row, 'gst');
   business.set('registration.path', 'registered');
+  if (business.udyam?.numberHash && business.udyam.numberHash !== hmac(number)) business.ownership = undefined;
   business.udyam = { numberEnc: encrypt(number), numberHash: hmac(number), masked: maskUdyam(number), enterpriseName: row.enterprise_name, enterpriseType: row.enterprise_type, majorActivity: row.major_activity, city: row.city, state: row.state, verifiedAt: new Date() };
   syncIdentity(business);
   await business.save();
@@ -164,26 +180,32 @@ export async function uploadDocument(req, res) {
   if (!req.file) throw new HttpError(400, 'Choose a file to upload.');
   const type = String(req.body?.type || '');
   if (!DOC_TYPES.includes(type)) throw new HttpError(400, 'Choose a supported document type.');
-  let fields = {};
-  try { fields = JSON.parse(req.body?.fields || '{}'); } catch { fields = {}; }
-  const clean = Object.fromEntries(DOC_FIELDS[type].map(key => [key, String(fields?.[key] || '').slice(0, 200)]));
-  const confidence = Math.max(0, Math.min(100, Math.round(Number(req.body?.confidence) || 0)));
+  if (business.kyc.status === 'rejected') throw new HttpError(409, 'This application was not approved. A KYC officer must reopen it before new documents are checked.', { code: 'kyc_rejected' });
+  // What the device read is only a hint; the server reads the file itself and uses its own reading.
+  let clientFields = {};
+  try { clientFields = JSON.parse(req.body?.fields || '{}'); } catch { clientFields = {}; }
+  const read = await readDocument({ buffer: req.file.buffer, mime: req.file.mimetype, type, clientFields });
+  const clean = Object.fromEntries(DOC_FIELDS[type].map(key => [key, String(read.fields?.[key] || '').slice(0, 200)]));
   const key = `kyc/${business._id}/${type.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.${EXT[req.file.mimetype]}`;
   await putObject(key, req.file.buffer, req.file.mimetype);
   const previous = business.documents.find(doc => doc.type === type);
-  if (previous) { await deleteObject(previous.storageKey).catch(() => {}); business.documents.pull(previous._id); }
-  business.documents.push({ type, storageKey: key, storageDriver: storageDriver(), mime: req.file.mimetype, size: req.file.size, confidence, fields: clean, looksLike: DOC_TYPES.includes(req.body?.looksLike) && req.body.looksLike !== type ? req.body.looksLike : undefined, uploadedAt: new Date() });
+  if (previous) {
+    // Replaced documents stay on record (file and checks) for the audit trail and for officers.
+    business.documentHistory.push({ type: previous.type, storageKey: previous.storageKey, fileHash: previous.fileHash, status: previous.status, checks: previous.checks, source: previous.source, uploadedAt: previous.uploadedAt, replacedAt: new Date() });
+    business.documents.pull(previous._id);
+  }
+  business.documents.push({ type, source: 'upload', storageKey: key, storageDriver: storageDriver(), mime: req.file.mimetype, size: req.file.size, confidence: read.confidence, fields: clean, fileHash: read.fileHash, reader: read.reader, looksLike: read.looksLike || (DOC_TYPES.includes(req.body?.looksLike) && req.body.looksLike !== type ? req.body.looksLike : undefined), uploadedAt: new Date() });
   await business.save();
   await evaluateBusiness(business, { trigger: 'documents' });
-  await audit(req.user, 'kyc.document_uploaded', 'Business', business._id, { type });
-  res.status(201).json({ business: presentBusiness(business) });
+  await audit(req.user, 'kyc.document_uploaded', 'Business', business._id, { type, serverConfidence: read.confidence, ai: read.reader.ai.status });
+  res.status(201).json({ business: presentBusiness(business), read: { fields: clean, confidence: read.confidence } });
 }
 
 export async function deleteDocument(req, res) {
   const business = await myBusiness(req);
   const doc = business.documents.find(item => item.type === req.params.type);
   if (!doc) throw new HttpError(404, 'Document not found.');
-  await deleteObject(doc.storageKey).catch(() => {});
+  business.documentHistory.push({ type: doc.type, storageKey: doc.storageKey, fileHash: doc.fileHash, status: doc.status, checks: doc.checks, source: doc.source, uploadedAt: doc.uploadedAt, replacedAt: new Date() });
   business.documents.pull(doc._id);
   await business.save();
   await evaluateBusiness(business, { trigger: 'documents' });
@@ -209,7 +231,7 @@ export async function viewDocument(req, res) {
   if (!doc?.storageKey) throw new HttpError(404, 'Document not found.');
   const isOwner = String(business.owner) === String(req.user._id);
   if (!isOwner && !['kyc_officer', 'ops_admin', 'super_admin'].includes(req.user.role)) throw new HttpError(403, 'You do not have access to this document.');
-  if (!isOwner) await audit(req.user, 'kyc.document_viewed', 'Business', business._id, { type: doc.type });
+  if (!isOwner) await audit(req.user, 'kyc.document_viewed', 'Business', business._id, { type: doc.type, docId: String(doc._id) });
   const { stream, contentType } = await getObject(doc.storageKey);
   res.set('Content-Type', contentType || doc.mime || 'application/octet-stream');
   res.set('Cache-Control', 'private, no-store');

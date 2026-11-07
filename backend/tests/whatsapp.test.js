@@ -28,7 +28,7 @@ test('a new owner gets a priced bundle by chatting, and the link opens the quote
   const [quote] = await say(phone, 'skip');
   assert.match(quote.text, /Everyday Business Bundle/);
   assert.match(quote.text, /Biz 5G AirFiber 100/);
-  assert.match(quote.text, /verified/, 'explains that a verified GSTIN unlocks more');
+  assert.ok(!/GST/.test(quote.text.split('\n').filter(line => /unlock/i.test(line)).join('')), 'no false claim that this retail bundle needs GST');
   const link = quote.text.match(/\/quote\/(\w+)\?t=([\w-]+)/);
   assert.ok(link, 'quote link with access token');
   assert.equal((await server.actor().get(`/quotes/${link[1]}`, { 'x-quote-token': link[2] })).status, 200);

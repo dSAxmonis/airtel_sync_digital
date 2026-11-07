@@ -12,7 +12,13 @@ import { redactIdentifiers } from '../libs/redact.js';
 const DB = 'udyam_digital_unreg_test';
 const AADHAAR = withCheckDigit('49911234567');
 const png = fs.readFileSync(path.join(backendRoot, 'data', 'specimens', 'K12_address_proof.png'));
-const upload = (client, type, fields, confidence = 93) => { const form = new FormData(); form.append('type', type); form.append('confidence', String(confidence)); form.append('fields', JSON.stringify(fields)); form.append('file', new Blob([png], { type: 'image/png' }), `${type}.png`); return client.post('/kyc/documents', form); };
+const fixture = name => fs.readFileSync(path.join(backendRoot, 'tests', 'fixtures', `${name}.png`));
+// The server reads the file itself, so each upload is a real image of the document it claims to be.
+const imageFor = (type, fields) => (type === 'Shop licence' ? fixture('licence-ravi') : type === 'Shop photo' ? fixture('photo-lakshmi') : type === 'Address proof' && fields.billed_to === 'Anita Desai' ? fixture('bill-anita') : type === 'Address proof' && fields.billed_to === 'Ravi Kumar' ? fixture('bill-ravi') : png);
+// salt: bytes after the PNG end marker make a distinct file (the same file from two applicants is flagged).
+const upload = (client, type, fields, confidence = 93, salt = '') => { const form = new FormData(); form.append('type', type); form.append('confidence', String(confidence)); form.append('fields', JSON.stringify(fields)); form.append('file', new Blob([Buffer.concat([imageFor(type, fields), Buffer.from(salt)])], { type: 'image/png' }), `${type}.png`); return client.post('/kyc/documents', form); };
+// One Aadhaar per owner: the same Aadhaar verified for two owners is a hard stop.
+const aadhaarFor = phone => withCheckDigit(`4991${phone.slice(-7)}`);
 const SHOP = { name: 'Lakshmi Tailoring', address: '12, Gandhi Road', city: 'Pune', state: 'Maharashtra', activity: 'Tailoring and alterations' };
 const BILL = { billed_to: 'Ravi Kumar', address: '12, Gandhi Road, Pune, Maharashtra - 411001', bill_date: '2026-07-01' };
 const LICENCE = { licence_number: 'SE-2024-118822', business_name: 'Lakshmi Tailoring', owner_name: 'Ravi Kumar', address: '12, Gandhi Road, Pune, Maharashtra - 411001', valid_till: '2028-03-31' };
@@ -26,8 +32,8 @@ async function ownerWithEkyc(phone, name = 'Ravi Kumar') {
   await loginCustomer(client, phone, name);
   await client.post('/kyc/consent');
   assert.equal((await client.post('/kyc/unregistered', SHOP)).status, 200);
-  const otp = await client.post('/kyc/owner/otp', { aadhaar: AADHAAR });
-  const verified = await client.post('/kyc/owner/verify', { aadhaar: AADHAAR, code: otp.body.devCode });
+  const otp = await client.post('/kyc/owner/otp', { aadhaar: aadhaarFor(phone) });
+  const verified = await client.post('/kyc/owner/verify', { aadhaar: aadhaarFor(phone), code: otp.body.devCode });
   assert.equal(verified.status, 200, verified.text);
   return client;
 }
@@ -117,6 +123,7 @@ test('rules: licence matched to the owner, photo needs a person, owner tier', as
 test('verify without registration: declare, Aadhaar e-KYC, bill + licence → owner-verified, order moves on', async () => {
   const client = server.actor();
   await loginCustomer(client, '9833300001', 'Ravi Kumar');
+  const AADHAAR = aadhaarFor('9833300001');
   const quote = await client.post('/quotes', { profile: { business: 'retail', employees: 3, tier: '1', gstin: 'no' } });
   await client.post(`/quotes/${quote.body.quote.id}/save`);
   const order = (await client.post('/orders', { quoteId: quote.body.quote.id })).body.order;
@@ -133,9 +140,9 @@ test('verify without registration: declare, Aadhaar e-KYC, bill + licence → ow
   assert.equal(ekyc.ownerKyc.aadhaar, `XXXX XXXX ${AADHAAR.slice(-4)}`);
   assert.equal(ekyc.kyc.status, 'documents_needed');
   assert.deepEqual(ekyc.kyc.missing, ['Address proof', 'Shop proof']);
-  await upload(client, 'Address proof', BILL);
-  const done = (await upload(client, 'Shop licence', LICENCE)).body.business;
-  assert.equal(done.kyc.status, 'verified', JSON.stringify(done.kyc));
+  await upload(client, 'Address proof', BILL, 93, 'owner-9833300001');
+  const done = (await upload(client, 'Shop licence', LICENCE, 93, 'owner-9833300001')).body.business;
+  assert.equal(done.kyc.status, 'verified', JSON.stringify(done.kyc.warnings));
   assert.equal(done.kyc.tier, 'owner');
   const moved = (await client.get(`/orders/${order.id}`)).body.order;
   assert.equal(moved.status, 'awaiting_signature', 'the waiting order moves on');
@@ -160,6 +167,9 @@ test('a shop photo alone goes to a KYC officer, who approves the owner-verified 
   assert.ok(row, 'in the review queue');
   const detail = (await officer.get(`/review/${row.id}`)).body.business;
   assert.equal(detail.ownerKyc.name, 'Ravi Kumar');
+  // An officer must open every uploaded document before approving.
+  assert.equal((await officer.post(`/review/${row.id}/decision`, { decision: 'approve' })).body.details.code, 'documents_unopened');
+  for (const doc of detail.documents) await officer.raw(`/documents/${doc.id}/file`);
   assert.equal((await officer.post(`/review/${row.id}/decision`, { decision: 'approve' })).body.business.kyc.tier, 'owner');
 });
 

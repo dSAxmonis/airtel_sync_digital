@@ -5,7 +5,7 @@ export const GST_RATE = 0.18;
 const CONNECTIVITY = ['P01', 'P02', 'P03', 'P04', 'P05', 'P06'];
 const BUNDLE_NAMES = { retail: 'Everyday Business Bundle', professional: 'Professional Growth Bundle', multi: 'Multi-site Control Bundle', manufacturing: 'Workshop Connect Bundle' };
 const SUMMARY = {
-  retail: ids => (ids.includes('P07') ? 'Reliable internet, a business mobile line and practical tools for your shop.' : 'Plug-and-play internet and a website to get your shop online; a verified GSTIN unlocks fibre, a business line and billing.'),
+  retail: ids => (ids.includes('P07') ? 'Reliable internet, a business mobile line and practical tools for your shop.' : 'Plug-and-play internet and a website to get your shop online. Fibre, a business line and GST billing can be added any time.'),
   professional: ids => {
     const extras = [ids.includes('P11') && 'a static IP', ids.includes('P16') && 'business email', ids.includes('P17') && 'cloud backup', (ids.includes('P20') || ids.includes('P21')) && 'device protection'].filter(Boolean);
     return `A stronger connection${extras.length ? ` with ${extras.length > 1 ? `${extras.slice(0, -1).join(', ')} and ${extras.at(-1)}` : extras[0]}` : ''} for a professional team.`;
@@ -16,8 +16,9 @@ const SUMMARY = {
 
 export const normaliseProfile = profile => ({
   business: ['retail', 'professional', 'multi', 'manufacturing'].includes(profile?.business) ? profile.business : 'retail',
-  employees: [1, 3, 8, 15, 30].includes(Number(profile?.employees)) ? Number(profile.employees) : 1,
-  sites: [1, 2, 3, 5, 8].includes(Number(profile?.sites)) ? Number(profile.sites) : 1,
+  // Exact counts (not buckets), so catalogue thresholds such as 10 or 25 people are applied exactly.
+  employees: Math.max(1, Math.min(10000, Math.round(Number(profile?.employees)) || 1)),
+  sites: Math.max(1, Math.min(500, Math.round(Number(profile?.sites)) || 1)),
   tier: ['1', '2'].includes(String(profile?.tier)) ? String(profile.tier) : '2',
   gstin: profile?.gstin === 'yes' ? 'yes' : 'no',
   current: ['hotspot', 'home', 'business', 'leased', 'none'].includes(profile?.current) ? profile.current : '',
@@ -25,13 +26,18 @@ export const normaliseProfile = profile => ({
   spend: profile?.spend ? String(Math.max(0, Math.round(Number(profile.spend) || 0))) : '',
 });
 
+// Returns every rule a product fails (not only the first), so the owner sees the full reason at once.
 export function eligibility(product, profile, gstVerified) {
-  if (!product.available_city_tiers.split(';').includes(profile.tier)) return { ok: false, reason: 'tier' };
-  if (profile.employees < Number(product.min_employees)) return { ok: false, reason: 'employees', min: Number(product.min_employees) };
-  if (profile.sites < Number(product.min_sites)) return { ok: false, reason: 'sites', min: Number(product.min_sites) };
-  if (product.requires_gstin === 'Y' && !gstVerified) return { ok: false, reason: 'gst' };
-  return { ok: true };
+  const failures = [];
+  if (!product.available_city_tiers.split(';').includes(profile.tier)) failures.push({ reason: 'tier' });
+  if (profile.employees < Number(product.min_employees)) failures.push({ reason: 'employees', min: Number(product.min_employees) });
+  if (profile.sites < Number(product.min_sites)) failures.push({ reason: 'sites', min: Number(product.min_sites) });
+  if (product.requires_gstin === 'Y' && !gstVerified) failures.push({ reason: 'gst' });
+  return failures.length ? { ok: false, ...failures[0], failures } : { ok: true, failures: [] };
 }
+
+// The nearest product that meets the same need, when the requested one is not eligible.
+const ALTERNATIVES = { P03: ['P02', 'P01'], P05: ['P02', 'P01'], P06: ['P05', 'P02'], P10: ['P09'], P21: ['P20'], P12: ['P07', 'P08'], P13: ['P07'], P15: ['P18'], P14: ['P18'], P24: ['P23'], P02: ['P01', 'P04'], P01: ['P04'] };
 
 const defaultQuantity = (product, profile) => {
   if (['per site', 'per camera', 'per counter'].includes(product.unit)) return profile.sites;
@@ -78,9 +84,13 @@ export function buildQuote({ profile: rawProfile, catalogue, gstVerified = false
     if (core.includes(id)) { notes.push({ code: 'requested_included', params: { product: name(id) }, text: `${name(id)} is already in your plan.` }); continue; }
     const check = eligibility(product, profile, gstVerified);
     if (!check.ok) {
-      const alternative = catalogue.find(other => other.category === product.category && other.product_id !== id && CONNECTIVITY.includes(other.product_id) === CONNECTIVITY.includes(id) && eligibility(other, profile, gstVerified).ok && !core.includes(other.product_id));
-      const text = { tier: `${name(id)} is not sold in tier ${profile.tier} cities.`, employees: `${name(id)} needs at least ${check.min} people.`, sites: `${name(id)} needs at least ${check.min} locations.`, gst: `${name(id)} needs a verified, active GSTIN. Verify your GST registration to add it.` }[check.reason];
-      notes.push({ code: `requested_${check.reason}`, params: { product: name(id), min: check.min, alternative: alternative ? name(alternative.product_id) : '' }, text: alternative && check.reason !== 'gst' ? `${text} ${name(alternative.product_id)} is the closest option.` : text });
+      const alternativeId = (ALTERNATIVES[id] || []).find(other => byId.get(other) && eligibility(byId.get(other), profile, gstVerified).ok);
+      const already = alternativeId && core.includes(alternativeId);
+      const parts = check.failures.map(failure => ({ tier: `it is not sold in tier ${profile.tier} cities`, employees: `it needs at least ${failure.min} people (you have ${profile.employees})`, sites: `it needs at least ${failure.min} locations (you have ${profile.sites})`, gst: 'it needs a verified, active GSTIN' }[failure.reason]));
+      let text = `${name(id)} can't be added: ${parts.join('; ')}.`;
+      if (check.failures.length === 1 && check.reason === 'gst') text += ' Verify your GST registration to add it.';
+      else if (alternativeId) text += already ? ` ${name(alternativeId)}, already in your plan, covers the same need.` : ` ${name(alternativeId)} is the closest option.`;
+      notes.push({ code: `requested_${check.reason}`, params: { product: name(id), min: check.min, alternative: alternativeId ? name(alternativeId) : '', reasons: check.failures.map(failure => failure.reason) }, text });
       continue;
     }
     const needs = product.requires_one_of.split('|').filter(Boolean);
@@ -120,7 +130,9 @@ export function buildQuote({ profile: rawProfile, catalogue, gstVerified = false
     const total = monthlyOf(selected);
     if (total > budget) notes.push({ code: 'budget_unreachable', params: { budget, minimum: total }, text: `The essential plan costs ₹${total.toLocaleString('en-IN')} a month including GST, above your ₹${budget.toLocaleString('en-IN')} budget.` });
   }
-  if (base.locked?.length) notes.push({ code: 'gst_unlocks', params: { products: base.locked.map(name).join(', ') }, text: `Verifying an active GST registration adds ${base.locked.map(name).join(', ')}.` });
+  // Only products the catalogue itself restricts to an active GSTIN are described as needing GST.
+  const gstOnly = (base.locked || []).filter(id => byId.get(id)?.requires_gstin === 'Y');
+  if (gstOnly.length) notes.push({ code: 'gst_unlocks', params: { products: gstOnly.map(name).join(', ') }, text: `${gstOnly.map(name).join(', ')} ${gstOnly.length > 1 ? 'need' : 'needs'} an active GSTIN by catalogue rules. Verify your GST registration to add ${gstOnly.length > 1 ? 'them' : 'it'}.` });
 
   const { items, totals } = priceLines(selected.map(productId => ({ productId, quantity: qty[productId] })), byId);
   for (const item of items) item.why = explainProduct(item.productId, item.quantity, profile);
@@ -131,10 +143,12 @@ export function buildQuote({ profile: rawProfile, catalogue, gstVerified = false
   const note = currentToolsNote(profile.current);
   return {
     profile, bundleName: BUNDLE_NAMES[profile.business], summary: SUMMARY[profile.business](core) + (note ? ` ${note}` : ''),
-    items, addons: addonOptions, enabledAddons: enabled, locked: base.locked || [], notes, totals, gstVerified,
+    items, addons: addonOptions, enabledAddons: enabled, locked: gstOnlyLocked(base.locked, byId), notes, totals, gstVerified,
     spendComparison: profile.spend ? Number(profile.spend) - totals.monthly : null,
   };
 }
+
+const gstOnlyLocked = (locked = [], byId) => locked.filter(id => byId.get(id)?.requires_gstin === 'Y');
 
 // Server-side guard used when an order is placed: every line must still be eligible for this business.
 export function validateLines(lines, profile, catalogue, gstVerified) {

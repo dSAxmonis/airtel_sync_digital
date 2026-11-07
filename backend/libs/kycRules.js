@@ -3,7 +3,7 @@ import { gstinChecksumValid } from './kycParse.js';
 import { maskGstin, maskUdyam } from './security.js';
 import { config } from './config.js';
 
-export const DOC_TYPES = ['GST certificate', 'Udyam certificate', 'Address proof', 'Signatory ID', 'Shop licence', 'Shop photo'];
+export const DOC_TYPES = ['GST certificate', 'Udyam certificate', 'Address proof', 'Signatory ID', 'Shop licence', 'Shop photo', 'Authority letter'];
 export const REQUIRED_DOCS = ['Address proof', 'Signatory ID'];
 // An unregistered business proves the owner with Aadhaar e-KYC (instead of a signatory ID) and the shop with a recent
 // bill plus a Shop & Establishment / trade licence or a storefront photo ("Shop proof" = either of those two).
@@ -15,6 +15,8 @@ export const DOC_FIELDS = {
   'Signatory ID': ['name', 'designation', 'for_business', 'id_number', 'valid_till'],
   'Shop licence': ['licence_number', 'business_name', 'owner_name', 'address', 'valid_till'],
   'Shop photo': ['signboard_text'],
+  // Letter of authorisation or board resolution naming the person who signs for a partnership, LLP or company.
+  'Authority letter': ['authorised_person', 'business_name', 'signed_by', 'letter_date'],
 };
 
 const compact = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -33,7 +35,7 @@ export function similarity(left, right) {
 export const daysBefore = date => Math.floor((Date.parse(`${config.kycReferenceDate}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000);
 const proprietorOf = legalName => String(legalName || '').match(/^(.*?)\s*\(\s*prop/i)?.[1]?.trim() || '';
 
-const AS_NOUN = { 'Address proof': 'an address proof', 'Signatory ID': 'a signatory ID', 'GST certificate': 'a GST certificate', 'Udyam certificate': 'a Udyam certificate', 'Shop licence': 'a shop licence', 'Shop photo': 'a shop photo' };
+const AS_NOUN = { 'Authority letter': 'an authority letter', 'Address proof': 'an address proof', 'Signatory ID': 'a signatory ID', 'GST certificate': 'a GST certificate', 'Udyam certificate': 'a Udyam certificate', 'Shop licence': 'a shop licence', 'Shop photo': 'a shop photo' };
 const article = name => AS_NOUN[name] || name;
 const MISSING_HINT = {
   'GST certificate': 'The text was read, but no GSTIN was found. Upload the GST registration certificate (Form GST REG-06).',
@@ -41,6 +43,7 @@ const MISSING_HINT = {
   'Address proof': 'The text was read, but no bill date or billed-to name was found. Upload a recent electricity, water or phone bill.',
   'Signatory ID': 'The text was read, but no name was found. Upload the signatory’s ID card itself, front side.',
   'Shop licence': 'The text was read, but no licence number or establishment name was found. Upload the Shop & Establishment certificate or trade licence.',
+  'Authority letter': 'The text was read, but no authorised person was found. Upload the signed letter of authorisation or board resolution.',
 };
 
 // documents: [{ type, confidence, fields }]; gst/udyam: verified registry rows for this business (or null).
@@ -61,7 +64,7 @@ export async function checkDocuments({ documents, gst, udyam, lookups, owner = n
   for (const { type, confidence = 0, fields = {}, looksLike } of documents) {
     const checks = [];
     const add = (status, label, detail = '') => checks.push({ status, label, detail });
-    const required = { 'GST certificate': fields.gstin, 'Udyam certificate': fields.enterprise_name, 'Address proof': fields.bill_date || fields.billed_to, 'Signatory ID': fields.name, 'Shop licence': fields.licence_number || fields.business_name, 'Shop photo': true }[type];
+    const required = { 'Authority letter': fields.authorised_person, 'GST certificate': fields.gstin, 'Udyam certificate': fields.enterprise_name, 'Address proof': fields.bill_date || fields.billed_to, 'Signatory ID': fields.name, 'Shop licence': fields.licence_number || fields.business_name, 'Shop photo': true }[type];
     // Two different problems: a blurry image (low confidence), or a clear image that is not the expected document.
     // A storefront photo is judged by a person, so its text-recognition score does not matter.
     if (confidence < 60 && type !== 'Shop photo') {
@@ -147,7 +150,7 @@ export async function checkDocuments({ documents, gst, udyam, lookups, owner = n
       const proprietor = proprietorOf(referenceLegal);
       if (proprietor) {
         if (similarity(fields.name, proprietor) >= 0.85) add('pass', 'Signatory is the registered proprietor');
-        else add('warn', 'Signatory is not the registered proprietor', `Registry proprietor: ${proprietor}. An authorisation letter may be needed.`);
+        else add('warn', 'Signatory is not the registered proprietor', 'A letter of authorisation from the proprietor is required.');
       }
     }
     if (type === 'Shop licence') {
@@ -160,6 +163,17 @@ export async function checkDocuments({ documents, gst, udyam, lookups, owner = n
       else if (daysBefore(fields.valid_till) > 0) add('fail', 'Shop licence has expired', `Valid till ${fields.valid_till}.`);
       else add('pass', 'Shop licence is valid', `Valid till ${fields.valid_till}.`);
       if (declared?.city && fields.address && !String(fields.address).toLowerCase().includes(declared.city.toLowerCase())) add('warn', 'Licence address is outside the city you declared', `You declared ${declared.city}.`);
+    }
+    if (type === 'Authority letter') {
+      const signatory = byType['Signatory ID']?.fields?.name;
+      if (signatory) {
+        if (similarity(fields.authorised_person, signatory) >= 0.85) add('pass', 'Letter authorises the signatory', fields.authorised_person);
+        else add('fail', 'Letter authorises a different person', `Letter: ${fields.authorised_person} · Signatory ID: ${signatory}`);
+      }
+      nameCheck(fields.business_name, 'Business on the letter', businessNames.length ? businessNames : acceptedNames);
+      if (!fields.letter_date) add('warn', 'Letter date could not be read');
+      else if (daysBefore(fields.letter_date) > 365 || daysBefore(fields.letter_date) < 0) add('fail', 'Authority letter is out of date', `Dated ${fields.letter_date}. It must be signed within the last 12 months.`);
+      else add('pass', 'Authority letter is current', `Dated ${fields.letter_date}.`);
     }
     if (type === 'Shop photo') {
       const signboard = compact(fields.signboard_text);
@@ -194,22 +208,43 @@ export function sameEnterprise(gst, udyam) {
   return { same: reasons.length === 0, reasons };
 }
 
-export function decide({ gst, udyam, results, unregistered = false, owner = null }) {
+// Who must sign for the business: a proprietor signs for themselves; anyone else needs a letter of authorisation.
+export function authorityLetterNeeded({ gst, results, ownership }) {
+  if (ownership?.role && ownership.role !== 'Proprietor' && ownership.method === 'digilocker') return false; // issuer-confirmed partner/director
+  const constitution = String(gst?.constitution || '');
+  const signatory = results.find(result => result.type === 'Signatory ID');
+  const notProprietor = signatory?.checks?.some(check => check.label === 'Signatory is not the registered proprietor');
+  return Boolean(signatory) && (notProprietor || (constitution && !/proprietor/i.test(constitution)));
+}
+
+// hardStops: problems no document and no officer can override (cancelled GSTIN, identifier owned by someone else,
+// a failed issuer signature). ownership: proof that the applicant controls this business (DigiLocker link or a
+// bank account in the business's name). Registered businesses are verified only with both registry and ownership.
+export function decide({ gst, udyam, results, unregistered = false, owner = null, hardStops = [], ownership = null, requireOwnership = true }) {
   // A registration always wins; without one, an unregistered business stands on its owner's e-KYC.
   const ownerPath = unregistered && !gst && !udyam;
-  const registryOk = ownerPath ? Boolean(owner?.name) : gst?.status === 'Active' || Boolean(udyam);
+  const registryOk = ownerPath ? Boolean(owner?.name) : (gst?.status === 'Active' || (Boolean(udyam) && !gst?.status));
   const present = new Set(results.map(result => result.type));
   if (present.has('Shop licence') || present.has('Shop photo')) present.add('Shop proof');
+  // Documents pulled from DigiLocker are issuer-signed and stand in for the uploads they replace.
+  if (ownership?.method === 'digilocker') { present.add('Signatory ID'); if (gst?.principal_place_of_business && ownership.gstFromIssuer) present.add('Address proof'); }
   const missing = (ownerPath ? UNREGISTERED_DOCS : REQUIRED_DOCS).filter(type => !present.has(type));
+  if (!ownerPath && authorityLetterNeeded({ gst, results, ownership }) && !present.has('Authority letter')) missing.push('Authority letter');
+  if (!ownerPath && requireOwnership && registryOkFor(gst, udyam) && !ownership?.verifiedAt) missing.push('Ownership proof');
   const failed = results.flatMap(result => result.checks.filter(check => check.status === 'fail').map(check => ({ type: result.type, ...check })));
   const warnings = results.flatMap(result => result.checks.filter(check => check.status === 'warn').map(check => ({ type: result.type, ...check })));
   const match = sameEnterprise(gst?.legal_name ? gst : null, udyam?.enterprise_name ? udyam : null);
   if (!match.same) failed.unshift({ type: 'Registry', status: 'fail', label: 'GST and Udyam registrations are for different businesses', detail: match.reasons.join(' · ') });
+  // A cancelled or suspended GSTIN is a hard stop even when a Udyam number is also present.
+  if (gst?.status && gst.status !== 'Active') hardStops = [{ type: 'Registry', status: 'fail', label: `GST registration is ${String(gst.status).toLowerCase()}`, detail: 'A cancelled or suspended GSTIN cannot be used, even with a Udyam registration. Contact support if it has been restored.', hard: true }, ...hardStops];
+  for (const stop of hardStops) failed.unshift({ ...stop, hard: true });
   let status;
-  if (!registryOk) status = 'registry_needed';
+  if (hardStops.length) status = 'action_needed';
+  else if (!registryOk) status = 'registry_needed';
   else if (missing.length) status = 'documents_needed';
   else if (failed.length) status = 'action_needed';
   else if (warnings.length) status = 'in_review';
   else status = 'verified';
-  return { status, tier: ownerPath ? (registryOk ? 'owner' : null) : gst?.status === 'Active' ? 'gst' : udyam ? 'udyam' : null, missing, failed, warnings };
+  return { status, tier: ownerPath ? (registryOk ? 'owner' : null) : gst?.status === 'Active' ? 'gst' : udyam ? 'udyam' : null, missing, failed, warnings, hardStops: hardStops.length };
 }
+const registryOkFor = (gst, udyam) => gst?.status === 'Active' || Boolean(udyam);

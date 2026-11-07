@@ -18,7 +18,9 @@ const orderSchema = new mongoose.Schema({
   status: { type: String, enum: ORDER_STATUSES, required: true, index: true },
   events: [event],
   signature: { signerName: String, signedAt: Date, documentHash: String },
-  payments: [{ amount: Number, status: { type: String, enum: ['success', 'failed'] }, method: String, reason: String, reference: String, at: { type: Date, default: Date.now } }],
+  payments: [{ amount: Number, status: { type: String, enum: ['success', 'failed'] }, method: String, reason: String, reference: String, idempotencyKey: String, at: { type: Date, default: Date.now } }],
+  // Short lease taken atomically while a payment or signature is processed, so a double submit cannot apply twice.
+  lockedUntil: Date,
   paymentFailures: { type: Number, default: 0 },
   autopay: { type: Boolean, default: false },
   slot: { date: String, window: String },

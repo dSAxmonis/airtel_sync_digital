@@ -41,12 +41,14 @@ function AdvisorChat() {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [ai, setAi] = useState(false);
+  // Which engine answered the last turn, so the owner (and a judge) can see when the AI or the local rules spoke.
+  const [engine, setEngine] = useState('');
   const [listening, setListening] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const quoteId = useRef(null);
   const chatEnd = useRef(null);
 
-  useEffect(() => { api.get('/advisor/status').then(({ data }) => setAi(data.ai)).catch(() => {}); }, []);
+  useEffect(() => { api.get('/advisor/status').then(({ data }) => { setAi(data.ai); setEngine(data.provider === 'gemini' ? 'Gemini' : data.provider === 'claude' ? 'Claude' : ''); }).catch(() => {}); }, []);
   useEffect(() => { chatEnd.current?.parentElement?.scrollTo({ top: 1e6, behavior: 'smooth' }); }, [messages]);
 
   const nextStep = useCallback(done => flow.findIndex(step => !done.has(step.key)), [flow]);
@@ -101,7 +103,8 @@ function AdvisorChat() {
     setBusy(true);
     try {
       const { data } = await api.post('/advisor/message', { text: message, language, profile, answered: [...answered], history });
-      if (data.mode === 'rules' && data.notice) setAi(false);
+      if (data.mode === 'ai') { setAi(true); setEngine(String(data.model || 'AI').replace(/^gemini-/, 'Gemini ').replace(/-/g, ' ')); }
+      else if (data.notice) setEngine('local rules (AI busy)');
       apply(data.updates);
       if (data.wants?.length) setWants(current => [...new Set([...current, ...data.wants])]);
       if (data.budget) setBudget(data.budget);
@@ -186,7 +189,7 @@ function AdvisorChat() {
         </div>
         <div className="flex items-center gap-4 text-xs font-semibold text-ink-muted">
           <span className="rounded-lg bg-paper px-2.5 py-1 text-ink" title={copy.ui.assistantHint}>
-            {ai ? 'AI advisor' : 'Guided advisor'}
+            {ai ? `AI advisor${engine ? ` · ${engine}` : ''}` : 'Guided advisor'}
           </span>
           <button
             type="button"
