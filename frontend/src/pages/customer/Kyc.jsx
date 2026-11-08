@@ -156,7 +156,7 @@ export default function Kyc() {
   const mode = choice || (business.gst || business.udyam ? 'registered' : business.registration?.path === 'unregistered' ? 'unregistered' : null);
   const unregistered = mode === 'unregistered';
   const docs = unregistered ? UNREGISTERED_DOCS : DOCS;
-  const registryMismatch = business.kyc.failed?.some(item => item.type === 'Registry');
+  const registryMismatch = business.kyc.failed?.some(item => item.type === 'Registry' && /different businesses/.test(item.label));
   const docOf = type => business.documents.find(doc => doc.type === type);
   const waiting = orders.filter(order => ['awaiting_kyc', 'awaiting_signature'].includes(order.status));
   const openRequests = business.kyc.reviewRequests.filter(request => !request.resolved);
