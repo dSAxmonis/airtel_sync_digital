@@ -8,7 +8,7 @@
 ![Node](https://img.shields.io/badge/Node-Express_5-339933?logo=nodedotjs&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?logo=mongodb&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Google-Gemini-8E75B2?logo=googlegemini&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-78-1E8E3E)
+![Tests](https://img.shields.io/badge/tests-90-1E8E3E)
 
 **Team Ticchi Gang · NSUT Delhi**
 YTL Hackathon 2026 · Enterprise Track A · Accel Business case
@@ -30,7 +30,7 @@ YTL Hackathon 2026 · Enterprise Track A · Accel Business case
 | Submission deck (7 slides, all deliverables) | [PDF](submission/deck/Udyam_Digital_Submission_7_Slides.pdf) · [PPTX](submission/deck/Udyam_Digital_Submission_7_Slides.pptx) |
 | Business case (10 slides) | [PDF](submission/deck/Udyam_Digital_Business_Case.pdf) · [PPTX](submission/deck/Udyam_Digital_Business_Case.pptx) |
 | Data privacy and security note (1 page) | [PDF](submission/privacy/Udyam_Digital_Privacy_Note.pdf) |
-| Working prototy[live herecally](https://airtel-sync-digital.onrendecom,)) |
+| Working prototype | [Live website](https://airtel-sync-digital.onrender.com/) · This repository ([run it locally](#run-it-locally)) |
 
 ---
 
@@ -50,7 +50,7 @@ Most of the delay is paperwork, KYC checks done by hand, and nobody telling the 
 Udyam Digital lets an owner describe the business in plain words, get one clear monthly price, verify the business once, sign, pay and book the installation in a single sitting, on a phone or on WhatsApp. Staff only see the cases that need a person.
 
 ```
-Advisor  →  Quote  →  Sign-in  →  KYC (DigiLocker, or PAN + documents)  →  e-Sign  →  UPI  →  Install slot  →  Live
+Mitu (advisor)  →  Quote  →  Sign-in  →  KYC (DigiLocker, or PAN + documents)  →  e-Sign  →  UPI  →  Install slot  →  Live
 ```
 
 - **Quote in about 3 minutes** instead of 3 to 5 days.
@@ -58,13 +58,24 @@ Advisor  →  Quote  →  Sign-in  →  KYC (DigiLocker, or PAN + documents)  �
 - **No status calls**: an 11-step live tracker, with every update also sent on WhatsApp.
 - **10 Indian languages**, by typing, tapping or speaking.
 
+### Meet Mitu, the plan buddy
+
+<img src="submission/screenshots/12-mitu-greeting.png" width="560" alt="Mitu greets the owner">
+
+Mitu is the friendly face of the advisor: a small red chat-bubble character with an antenna that sends out signals.
+
+- **Greets** the owner with a wave the first time they open the advisor: "Hi, I'm Mitu! I'll help you pick the right plan."
+- **Thinks** while the owner types or waits for a reply, with bouncing dots, and **cheers** with a little bounce when the plan and price appear.
+- **Speaks every supported language**, with its name in each script (मीतू, মিতু, மிது, మితు, ಮಿತು, મીતુ, മിതു, ਮੀਤੂ). Ask "kya naam hai?" and it answers in Hinglish; ask in Hindi and it answers in Hindi.
+- Mitu only understands the owner. The rules engine picks every product and sets every price.
+
 ---
 
 ## Screenshots
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="submission/screenshots/01-advisor.png" width="230"><br><sub><b>Advisor</b> · the owner describes the business in Hindi</sub></td>
+    <td align="center" width="33%"><img src="submission/screenshots/01-advisor.png" width="230"><br><sub><b>Mitu</b> · the advisor answers in Hindi</sub></td>
     <td align="center" width="33%"><img src="submission/screenshots/02-quote.png" width="230"><br><sub><b>Quote</b> · eligible products, one monthly price with GST</sub></td>
     <td align="center" width="33%"><img src="submission/screenshots/03-digilocker.png" width="230"><br><sub><b>DigiLocker</b> · signed documents from the issuers</sub></td>
   </tr>
@@ -95,7 +106,7 @@ Advisor  →  Quote  →  Sign-in  →  KYC (DigiLocker, or PAN + documents)  �
 <img src="submission/architecture/Udyam_Digital_Architecture.png" alt="Udyam Digital solution architecture">
 
 - **Channels.** A mobile-first React web app with voice and chat, a WhatsApp Cloud API webhook, and staff consoles, all behind one API gateway (auth, rate limits, CSRF checks).
-- **AI advisor.** Gemini reads the owner's words and fills a structured profile. It is grounded on `product_catalogue.csv` and can only name real products. The rules engine, not the AI, picks every product and sets every price.
+- **AI advisor (Mitu).** Gemini reads the owner's words and fills a structured profile. It is grounded on `product_catalogue.csv` and can only name real products. The rules engine, not the AI, picks every product and sets every price.
 - **KYC engine.** DigiLocker (OAuth 2.0 with PKCE, issuer signatures checked) as the fast path. Fallback: business PAN, ₹1 bank check, and documents read twice on our server (Tesseract OCR and a second AI reader), matched against the GSTIN and Udyam registries by rules.
 - **Orders and field.** Idempotent e-sign and UPI, installation slots, technician GPS check-in, and notifications in the owner's language.
 - **Data and privacy.** MongoDB Atlas with GSTIN, Udyam and Aadhaar references encrypted (AES-256-GCM) and looked up by keyed hash; PAN and Aadhaar masked on every screen; private document storage; append-only audit log.
@@ -108,8 +119,8 @@ Official sources (DigiLocker, UIDAI, GSTN, Udyam, PAN, bank, eSign, UPI) are sim
 
 | Role | What they do |
 |---|---|
-| **Business owner** | Advisor → quote → sign-in → verify once → e-sign → pay → book a slot → follow the tracker. |
-| **Owner on WhatsApp** | The same advisor by chat in 10 languages, an order link, and "track my order". |
+| **Business owner** | Chat with Mitu → quote → sign-in → verify once → e-sign → pay → book a slot → follow the tracker. |
+| **Owner on WhatsApp** | The same advisor (Mitu) by chat in 10 languages, an order link, and "track my order". |
 | **Channel partner** | Cases the journey could not close, and stalled leads ranked by likelihood to convert, with reasons. |
 | **KYC officer** | Only applications that failed a check, shown side by side with the registry. Every override needs a reason. |
 | **Second officer** | Confirms or returns every override (maker-checker). |
@@ -198,7 +209,7 @@ Staff password: `Demo@12345` (set by `DEMO_STAFF_PASSWORD`). Or skip passwords w
 npm test
 ```
 
-78 tests: the advisor scenario bank and a sweep of 2,000 profiles, real OCR over all 47 specimen images, one end-to-end journey across every role (including access control and DPDP erasure), the no-registration path, and the WhatsApp channel. They need MongoDB on `127.0.0.1:27017` and use their own throwaway database.
+90 tests: the advisor scenario bank and a sweep of 2,000 profiles, real OCR over all 47 specimen images, one end-to-end journey across every role (including access control and DPDP erasure), the no-registration path, and the WhatsApp channel. They need MongoDB on `127.0.0.1:27017` and use their own throwaway database.
 
 <details>
 <summary><b>Configuration and deployment</b></summary>

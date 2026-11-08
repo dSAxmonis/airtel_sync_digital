@@ -36,3 +36,45 @@
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+/* Mitu, the advisor mascot */
+.mitu { display: inline-block; flex: none; line-height: 0; }
+.mitu svg { overflow: visible; }
+.mitu-body { transform-origin: 50% 90%; animation: mitu-float 3.2s ease-in-out infinite; }
+.mitu-eyes { transform-origin: 60px 58px; transform-box: view-box; animation: mitu-blink 4.2s infinite; }
+.mitu-hand { transform-origin: 98px 70px; transform-box: view-box; }
+.mitu-signal path { opacity: 0; }
+.mitu-grin, .mitu-sparkles { opacity: 0; }
+.mitu-sparkles { transform-origin: 60px 60px; transform-box: view-box; }
+.mitu-greet .mitu-body { animation: mitu-hop .9s ease-in-out 2, mitu-float 3.2s ease-in-out 1.8s infinite; }
+.mitu-greet .mitu-hand { animation: mitu-wave .45s ease-in-out 6 alternate; }
+.mitu-greet .mitu-signal path { animation: mitu-ping 1.4s ease-out infinite; }
+.mitu-greet .mitu-signal .mitu-s2 { animation-delay: .25s; }
+.mitu-thinking .mitu-body { animation: mitu-tilt 1.6s ease-in-out infinite; }
+.mitu-thinking .mitu-eyes { animation: mitu-look 1.6s ease-in-out infinite; }
+.mitu-thinking .mitu-signal path { animation: mitu-ping 1s ease-out infinite; }
+.mitu-thinking .mitu-signal .mitu-s2 { animation-delay: .3s; }
+.mitu-happy .mitu-body { animation: mitu-bounce .5s ease-out 3; }
+.mitu-happy .mitu-smile { opacity: 0; }
+.mitu-happy .mitu-grin { opacity: 1; }
+.mitu-happy .mitu-sparkles { animation: mitu-sparkle 1.4s ease-out 1 forwards; }
+.mitu-dots { display: inline-flex; gap: 4px; align-items: center; height: 1em; }
+.mitu-dots i { width: 7px; height: 7px; border-radius: 50%; background: #e40000; opacity: .35; animation: mitu-dot 1s ease-in-out infinite; }
+.mitu-dots i:nth-child(2) { animation-delay: .15s; } .mitu-dots i:nth-child(3) { animation-delay: .3s; }
+.mitu-card { animation: mitu-card-in .5s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes mitu-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4%); } }
+@keyframes mitu-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes mitu-hop { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-12%) scale(1.03, .97); } 60% { transform: translateY(0) scale(1.05, .95); } }
+@keyframes mitu-wave { from { transform: rotate(-18deg); } to { transform: rotate(28deg); } }
+@keyframes mitu-ping { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes mitu-tilt { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes mitu-look { 0%, 100% { transform: translate(3px, -3px); } 50% { transform: translate(-2px, -4px); } }
+@keyframes mitu-bounce { 0%, 100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-14%) scale(.96, 1.04); } 70% { transform: translateY(0) scale(1.06, .94); } }
+@keyframes mitu-sparkle { 0% { opacity: 0; transform: scale(.4) rotate(0); } 40% { opacity: 1; transform: scale(1.1) rotate(20deg); } 100% { opacity: 0; transform: scale(1.3) rotate(40deg); } }
+@keyframes mitu-dot { 0%, 100% { transform: translateY(0); opacity: .35; } 50% { transform: translateY(-4px); opacity: 1; } }
+@keyframes mitu-card-in { from { opacity: 0; transform: translateY(10px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .mitu *, .mitu-dots i, .mitu-card { animation: none !important; }
+  .mitu-happy .mitu-sparkles { opacity: 1; }
+}
+.mitu-still .mitu-body, .mitu-still .mitu-eyes { animation: none; }

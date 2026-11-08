@@ -16,6 +16,7 @@ export default {
   'faq.q3': 'How fast is installation?', 'faq.a3': 'You pick a slot within days of paying. Most connections go live within a week.', 'faq.q4': 'Is my data safe?', 'faq.a4': 'We collect only what each step needs, mask your identifiers, and you can withdraw consent or ask us to delete your data.',
   'footer.tagline': 'Made for India’s small businesses', 'footer.privacy': 'Privacy & your data', 'footer.grievance': 'Grievance officer: privacy@accelbusiness.demo', 'footer.synthetic': 'Hackathon prototype · synthetic data',
 
+  'mitu.name': "Mitu", 'mitu.role': "your plan buddy", 'mitu.hi': "Hi, I'm Mitu! I'll help you pick the right plan.", 'mitu.sub': "Tell me about your business, in your own words and language.", 'mitu.thinking': "Mitu is thinking…", 'mitu.listening': "Mitu is listening…", 'mitu.happy': "Here's your plan!",
   'adv.title': 'Let’s find the right bundle for your business', 'adv.subtitle': 'Answer a few questions by tapping, typing or speaking. Your price updates as you go.', 'adv.ai': 'GenAI advisor', 'adv.rules': 'Guided advisor', 'adv.yourProfile': 'Your business profile', 'adv.seeQuote': 'See my price', 'adv.thinking': 'Thinking…', 'adv.typeHint': 'e.g. “Clinic with 8 people in Pune, we have GST”', 'adv.speak': 'Speak', 'adv.send': 'Send', 'adv.reset': 'Start over',
   'adv.wants': 'You asked for', 'adv.budget': 'Budget', 'adv.voiceNote': 'Voice uses your browser’s speech service.', 'adv.ready': 'Your profile is ready. See your price.',
 

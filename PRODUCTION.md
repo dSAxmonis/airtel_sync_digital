@@ -12,7 +12,7 @@ This document is our plan for taking it there.
 |---|---|
 | Channels | Mobile-first React web app (10 languages, voice input), a WhatsApp simulator and a working Meta Cloud API webhook, consoles for each staff role |
 | API | One Node.js / Express service with cookie sessions, role-based access, CSRF checks and rate limits |
-| AI advisor | Gemini turns the owner's words into a profile, grounded on the product catalogue. Falls back to a lighter model, then to local rules |
+| AI advisor (Mitu) | Gemini turns the owner's words into a profile, grounded on the product catalogue. Falls back to a lighter model, then to local rules |
 | Pricing | Rules engine over the 25-product catalogue. It alone decides products, eligibility and price |
 | KYC engine | DigiLocker flow with signature checks, PAN + ₹1 bank check, documents read by Tesseract OCR and an AI reader, registry match, hard stops, maker-checker |
 | Orders and field | Idempotent e-sign and UPI, installation slots, technician GPS check-in, owner sign-off code, 11-step tracker |

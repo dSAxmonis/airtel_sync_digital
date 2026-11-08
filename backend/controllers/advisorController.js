@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { understand } from '../libs/advisorNlu.js';
+import { asksIdentity, mituIntro } from '../libs/mitu.js';
 import { advisorAvailable, advisorProvider, advisorTurn, AdvisorUnavailable } from '../libs/advisorAI.js';
 import { normaliseProfile } from '../libs/pricing.js';
 import { getCatalogue } from '../services/reference.js';
@@ -25,6 +26,11 @@ const bodySchema = z.object({
 export async function message(req, res) {
   const body = bodySchema.parse(req.body);
   aiEnabled ??= advisorAvailable();
+  // "What's your name?" / "kya naam hai?": Mitu introduces itself in the owner's language, then the chat moves on.
+  if (asksIdentity(body.text)) {
+    const local = understand(body.text);
+    return res.json({ mode: 'rules', ...local, recognized: true, intro: mituIntro(body.text, body.language), ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
+  }
   if (aiEnabled) {
     try {
       const turn = await advisorTurn({ catalogue: await getCatalogue(), language: body.language, messages: [...body.history, { from: 'user', text: body.text }], profile: normaliseProfile(body.profile) });

@@ -19,7 +19,7 @@ const OUTCOMES = [
 ];
 
 const FEATURES = [
-  [Sparkles, 'AI bundle advisor', 'Tell us your business type, size, locations and current tools. The advisor recommends a bundle from the catalogue and explains why in plain language.'],
+  [Sparkles, 'Mitu, your plan buddy', 'Tell Mitu your business type, size, locations and current tools, in your own language. Mitu recommends a bundle from the catalogue and explains why in plain words.'],
   [ReceiptText, 'One transparent price', 'One monthly figure with GST, setup fee and contract length shown up front. Toggle add-ons and watch the price change.'],
   [ShieldCheck, 'Smart KYC', 'GSTIN and Udyam lookup with your consent, document reading on your phone, and 17 checks that catch expired or mismatched papers.'],
   [Truck, 'Order tracker', 'Every step from packing to activation, with dates. Check it any time instead of calling support.'],

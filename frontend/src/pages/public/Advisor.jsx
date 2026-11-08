@@ -7,6 +7,9 @@ import { getAdvisorCopy } from '../../lib/advisorLocales.js';
 import { rupees } from '../../lib/format.js';
 import { Button, useToast, cx } from '../../components/ui.jsx';
 import OnboardingStepper from '../../components/OnboardingStepper.jsx';
+import Mitu, { TypingDots } from '../../components/Mitu.jsx';
+
+const GREETED = 'ud_mitu_greeted';
 
 const START = { business: 'retail', employees: 1, sites: 1, tier: '2', gstin: 'no', current: '', goal: 'reliable', spend: '' };
 const welcome = copy => [{ from: 'assistant', text: copy.welcome, chips: copy.flow[0].choices }];
@@ -40,15 +43,40 @@ function AdvisorChat() {
   const [quote, setQuote] = useState(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [ai, setAi] = useState(false);
-  // Which engine answered the last turn, so the owner (and a judge) can see when the AI or the local rules spoke.
-  const [engine, setEngine] = useState('');
+  // Mitu's mood: a greeting on the first visit of the session (and after "start over"), thinking while the owner
+  // types or waits for a reply, a happy bounce when a plan arrives.
+  const [greeting, setGreeting] = useState(() => { try { return !sessionStorage.getItem(GREETED); } catch { return true; } });
+  const [greetKey, setGreetKey] = useState(0);
+  const [typing, setTyping] = useState(false);
+  const [celebrated, setCelebrated] = useState(null);
+  const typingTimers = useRef({});
   const [listening, setListening] = useState(false);
   const [showCustomize, setShowCustomize] = useState(false);
   const quoteId = useRef(null);
   const chatEnd = useRef(null);
 
-  useEffect(() => { api.get('/advisor/status').then(({ data }) => { setAi(data.ai); setEngine(data.provider === 'gemini' ? 'Gemini' : data.provider === 'claude' ? 'Claude' : ''); }).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!greeting) return undefined;
+    try { sessionStorage.setItem(GREETED, '1'); } catch { /* storage unavailable */ }
+    const timer = setTimeout(() => setGreeting(false), 3200);
+    return () => clearTimeout(timer);
+  }, [greeting, greetKey]);
+  const bundleName = quote?.result?.bundleName;
+  // A new plan name means a happy bounce until it has been celebrated (1.6 s).
+  const happy = Boolean(bundleName) && bundleName !== celebrated;
+  useEffect(() => {
+    if (!happy) return undefined;
+    const timer = setTimeout(() => setCelebrated(bundleName), 1600);
+    return () => clearTimeout(timer);
+  }, [happy, bundleName]);
+  useEffect(() => () => { clearTimeout(typingTimers.current.start); clearTimeout(typingTimers.current.stop); }, []);
+  const onType = value => {
+    setText(value);
+    const timers = typingTimers.current;
+    clearTimeout(timers.stop);
+    if (!timers.start) timers.start = setTimeout(() => { setTyping(true); timers.start = null; }, 400);
+    timers.stop = setTimeout(() => { clearTimeout(timers.start); timers.start = null; setTyping(false); }, 1500);
+  };
   useEffect(() => { chatEnd.current?.parentElement?.scrollTo({ top: 1e6, behavior: 'smooth' }); }, [messages]);
 
   const nextStep = useCallback(done => flow.findIndex(step => !done.has(step.key)), [flow]);
@@ -103,8 +131,6 @@ function AdvisorChat() {
     setBusy(true);
     try {
       const { data } = await api.post('/advisor/message', { text: message, language, profile, answered: [...answered], history });
-      if (data.mode === 'ai') { setAi(true); setEngine(String(data.model || 'AI').replace(/^gemini-/, 'Gemini ').replace(/-/g, ' ')); }
-      else if (data.notice) setEngine('local rules (AI busy)');
       apply(data.updates);
       if (data.wants?.length) setWants(current => [...new Set([...current, ...data.wants])]);
       if (data.budget) setBudget(data.budget);
@@ -112,7 +138,8 @@ function AdvisorChat() {
       if (data.wants?.length || data.budget) done.add('__extra');
       setAnswered(done);
       const index = nextStep(done);
-      const reply = data.mode === 'ai' && data.reply ? { from: 'assistant', text: data.reply, chips: index < 0 || data.ready ? [] : flow[index].choices }
+      const reply = data.intro ? { ...promptFor(index), text: `${data.intro}\n${promptFor(index).text}` }
+        : data.mode === 'ai' && data.reply ? { from: 'assistant', text: data.reply, chips: index < 0 || data.ready ? [] : flow[index].choices }
         : !data.recognized ? { from: 'assistant', text: `${copy.invalid} ${flow[nextStep(answered)]?.prompt || ''}`, chips: flow[nextStep(answered)]?.choices || [] }
           : promptFor(index);
       setMessages(current => [...current.filter(item => !item.thinking), reply]);
@@ -156,7 +183,7 @@ function AdvisorChat() {
     } catch (error) { toast(errorMessage(error), 'error'); }
   };
 
-  const reset = () => { setProfile(START); setAnswered(new Set()); setWants([]); setBudget(null); setQuote(null); quoteId.current = null; setMessages(welcome(copy)); };
+  const reset = () => { setGreeting(true); setGreetKey(key => key + 1); setProfile(START); setAnswered(new Set()); setWants([]); setBudget(null); setQuote(null); quoteId.current = null; setMessages(welcome(copy)); };
   // One row per answer; the value is a quiet select, so a wrong guess is fixed in place.
   const row = (key, label, numeric) => {
     const step = flow.find(item => item.key === key);
@@ -173,6 +200,9 @@ function AdvisorChat() {
   };
   const lastChips = useMemo(() => { const last = [...messages].reverse().find(item => item.from === 'assistant' && !item.thinking); return last?.chips || []; }, [messages]);
   const ready = nextStep(answered) < 0;
+  const mood = busy || typing || listening ? 'thinking' : happy ? 'happy' : greeting ? 'greet' : 'idle';
+  const status = listening ? t('mitu.listening') : busy || typing ? t('mitu.thinking') : happy ? t('mitu.happy') : t('mitu.role');
+  const lastBot = messages.reduce((last, item, index) => (item.from === 'assistant' ? index : last), -1);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
@@ -188,8 +218,9 @@ function AdvisorChat() {
           </p>
         </div>
         <div className="flex items-center gap-4 text-xs font-semibold text-ink-muted">
-          <span className="rounded-lg bg-paper px-2.5 py-1 text-ink" title={copy.ui.assistantHint}>
-            {ai ? `AI advisor${engine ? ` · ${engine}` : ''}` : 'Guided advisor'}
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-white py-1 pl-1 pr-3 text-ink" title={copy.ui.assistantHint}>
+            <Mitu state={mood} size={28} />
+            {mood === 'idle' || mood === 'greet' ? <span><b className="text-brand-600">{t('mitu.name')}</b> · <span className="font-medium text-ink-muted">{status}</span></span> : <span className="font-semibold text-brand-700">{status}</span>}
           </span>
           <button
             type="button"
@@ -206,6 +237,13 @@ function AdvisorChat() {
         {/* Chat / Question Assistant Area */}
         <div className="card flex flex-col overflow-hidden lg:min-h-[500px]">
           <div className="flex-1 space-y-4 p-5 sm:p-6 lg:max-h-[520px] lg:overflow-y-auto" aria-live="polite">
+            <div key={greetKey} className="mitu-card flex items-center gap-4 rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50 to-white p-4">
+              <Mitu state={greeting ? 'greet' : mood === 'happy' ? 'happy' : 'idle'} size={84} title={t('mitu.name')} />
+              <div>
+                <p className="text-base font-semibold text-ink">{t('mitu.hi')}</p>
+                <p className="mt-1 text-sm text-ink-muted">{t('mitu.sub')}</p>
+              </div>
+            </div>
             {messages.map((message, index) =>
               message.from === 'user' ? (
                 <div
@@ -216,16 +254,14 @@ function AdvisorChat() {
                 </div>
               ) : (
                 <div key={index} className="flex max-w-[90%] items-start gap-3">
-                  <span className="grid h-8 w-8 flex-none place-items-center rounded-xl bg-brand-600 text-white" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M5 15.5c2.5-6 9-9.5 14-7.5" /><path d="M8.5 18.5c2-3.2 5.6-5 9-4.3" /></svg>
-                  </span>
+                  <Mitu size={34} state={index === lastBot ? mood : 'still'} />
                   <div
                     className={cx(
                       'whitespace-pre-line rounded-2xl rounded-tl-sm border border-line/80 bg-paper px-4 py-3 text-sm leading-relaxed text-ink',
-                      message.thinking && 'animate-pulse text-ink-muted'
+                      message.thinking && 'text-ink-muted'
                     )}
                   >
-                    {message.text}
+                    {message.thinking ? <span className="inline-flex items-center gap-2"><TypingDots />{t('mitu.thinking')}</span> : message.text}
                   </div>
                 </div>
               )
@@ -254,7 +290,7 @@ function AdvisorChat() {
             <input
               className="input text-sm"
               value={text}
-              onChange={(event) => setText(event.target.value)}
+              onChange={(event) => onType(event.target.value)}
               placeholder={t('adv.typeHint')}
               maxLength={600}
               aria-label={t('adv.send')}
