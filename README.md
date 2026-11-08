@@ -30,7 +30,7 @@ YTL Hackathon 2026 · Enterprise Track A · Accel Business case
 | Submission deck (7 slides, all deliverables) | [PDF](submission/deck/Udyam_Digital_Submission_7_Slides.pdf) · [PPTX](submission/deck/Udyam_Digital_Submission_7_Slides.pptx) |
 | Business case (10 slides) | [PDF](submission/deck/Udyam_Digital_Business_Case.pdf) · [PPTX](submission/deck/Udyam_Digital_Business_Case.pptx) |
 | Data privacy and security note (1 page) | [PDF](submission/privacy/Udyam_Digital_Privacy_Note.pdf) |
-| Working prototype | This repository ([run it locally](#run-it-locally)) |
+| Working prototy[live herecally](https://airtel-sync-digital.onrendecom,)) |
 
 ---
 
