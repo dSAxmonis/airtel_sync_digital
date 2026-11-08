@@ -15,7 +15,7 @@ YTL Hackathon 2026 · Enterprise Track A · Accel Business case
 
 <a href="https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing"><img src="submission/video/demo-preview.gif" width="800" alt="Udyam Digital demo preview"></a>
 
-**[▶ Watch the full 3-minute demo with voice-over](https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing)**
+**[🌐 Live website](https://airtel-sync-digital.onrender.com/)** · **[▶ Watch the full 3-minute demo with voice-over](https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing)**
 
 </div>
 
@@ -214,6 +214,8 @@ All settings live in `backend/.env` (see `backend/.env.example`). The frontend n
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` | Private document storage on Cloudflare R2. Empty = `backend/uploads` |
 | `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` | Real WhatsApp Cloud API. Without them, the `/whatsapp` simulator |
 | `CLIENT_URL` | Production site URL |
+| `CORS_ORIGINS` | Extra allowed browser origins, comma-separated; wildcards like `https://*.vercel.app` work |
+| `COOKIE_SAMESITE` | `lax` (default, frontend and API on one site) or `none` (frontend calls the API on another domain) |
 | `DEMO_MODE`, `OTP_DEV_MODE` | `true` for the demo. Set both to `false` for real users |
 | `KYC_REFERENCE_DATE` | `2026-07-15`, the date the specimen documents are checked against |
 

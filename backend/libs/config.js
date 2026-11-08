@@ -12,6 +12,12 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'dev-only-jwt-secret-change-me',
   dataKey: process.env.DATA_ENCRYPTION_KEY || 'dev-only-data-key-change-me',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
+  // Browser origins allowed to call the API with cookies: CLIENT_URL plus CORS_ORIGINS (comma-separated).
+  // An entry may use one wildcard label, e.g. https://*.vercel.app for preview deployments.
+  corsOrigins: [process.env.CLIENT_URL || 'http://localhost:5173', process.env.CORS_ORIGINS || ''].join(',').split(',').map(origin => origin.trim().replace(/\/+$/, '')).filter(Boolean),
+  // Login cookie SameSite: 'lax' when the frontend reaches the API on the same site (proxy or one server);
+  // 'none' when the frontend calls the API on another domain (then the cookie is always Secure).
+  cookieSameSite: ['lax', 'strict', 'none'].includes(String(process.env.COOKIE_SAMESITE || '').toLowerCase()) ? String(process.env.COOKIE_SAMESITE).toLowerCase() : 'lax',
   // Demo shortcuts (one-click sign-in as any actor, OTP shown on screen) are off in production unless asked for.
   demoMode: flag(process.env.DEMO_MODE, process.env.NODE_ENV !== 'production'),
   otpDevMode: flag(process.env.OTP_DEV_MODE, process.env.NODE_ENV !== 'production'),

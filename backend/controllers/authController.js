@@ -7,6 +7,7 @@ import { issueOtp, verifyOtp } from '../services/otp.js';
 import { HttpError } from '../middlewares/error.js';
 import { COOKIE } from '../middlewares/auth.js';
 import { audit } from '../services/audit.js';
+const cookieOptions = () => ({ httpOnly: true, sameSite: config.cookieSameSite, secure: config.env === 'production' || config.cookieSameSite === 'none' });
 
 const LANGUAGES = ['en-IN', 'hi-IN', 'mr-IN', 'ta-IN', 'te-IN', 'kn-IN', 'gu-IN', 'bn-IN', 'ml-IN', 'pa-IN'];
 const phoneSchema = z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a 10-digit Indian mobile number.');
@@ -18,7 +19,7 @@ export const publicUser = user => user && ({
 
 function setSession(res, user) {
   const token = signToken(user);
-  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', secure: config.env === 'production', maxAge: 7 * 86_400_000 });
+  res.cookie(COOKIE, token, { ...cookieOptions(), maxAge: 7 * 86_400_000 });
   return token;
 }
 
@@ -71,7 +72,7 @@ export async function updateMe(req, res) {
 }
 
 export function logout(req, res) {
-  res.clearCookie(COOKIE);
+  res.clearCookie(COOKIE, cookieOptions());
   res.json({ ok: true });
 }
 
