@@ -148,7 +148,10 @@ NODE_ENV=production npm start --prefix backend
 
 Put HTTPS in front of it (Nginx, Caddy or the host's load balancer), then check `GET /api/health`. Run `npm run create-admin` once to create the first operations admin.
 
-If the frontend and API are on separate hosts, set `VITE_API_BASE` in `frontend/.env.production` before building, and keep both on the same parent domain (for example `www.` and `api.`) so the login cookie works.
+If the frontend and API are on separate hosts, there are two ways:
+
+- Recommended: keep the API on the frontend's domain with a rewrite. On a Render Static Site add the rewrites `/api/*` → `https://<api>.onrender.com/api/*` and `/*` → `/index.html` (both as Rewrite, not Redirect). On Vercel use a `vercel.json` with the same two rules. Set `CLIENT_URL` to the frontend URL and leave `COOKIE_SAMESITE=lax`.
+- Or call the API directly: build the frontend with `VITE_API_BASE=https://<api>/api`, and on the API set `CORS_ORIGINS` to the frontend URL and `COOKIE_SAMESITE=none`.
 
 ### Settings (`backend/.env`, see `backend/.env.example`)
 
@@ -157,6 +160,8 @@ If the frontend and API are on separate hosts, set `VITE_API_BASE` in `frontend/
 | `NODE_ENV=production`, `PORT` | Production mode (secure cookies, strong-secret check) and the listening port |
 | `MONGO_URI` | MongoDB Atlas connection string |
 | `CLIENT_URL` | The site's public URL, for CORS and the CSRF check |
+| `CORS_ORIGINS` | Extra allowed origins, comma-separated (wildcards like `https://*.vercel.app` work) |
+| `COOKIE_SAMESITE` | `lax` when the frontend reaches the API through a rewrite or one server; `none` when it calls the API on another domain |
 | `JWT_SECRET`, `DATA_ENCRYPTION_KEY` | Long random values. Never change the encryption key after launch, or stored data can't be read |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first operations admin |
 | `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODEL` | AI advisor and document reader |
