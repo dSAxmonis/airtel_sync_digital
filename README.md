@@ -13,9 +13,9 @@
 **Team Ticchi Gang · NSUT Delhi**
 YTL Hackathon 2026 · Enterprise Track A · Accel Business case
 
-<a href="https://drive.google.com/file/d/18CISr8iT5qkPrn2CSHBP9XwBaVJNuqpK/view?usp=sharing"><img src="submission/video/demo-preview.gif" width="800" alt="Udyam Digital demo preview"></a>
+<a href="https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing"><img src="submission/video/demo-preview.gif" width="800" alt="Udyam Digital demo preview"></a>
 
-**[▶ Watch the full 3-minute demo with voice-over](https://drive.google.com/file/d/18CISr8iT5qkPrn2CSHBP9XwBaVJNuqpK/view?usp=sharing)**
+**[▶ Watch the full 3-minute demo with voice-over](https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing)**
 
 </div>
 
@@ -25,7 +25,7 @@ YTL Hackathon 2026 · Enterprise Track A · Accel Business case
 
 | Deliverable | File |
 |---|---|
-| Demo video (2:59) | [Watch on Google Drive](https://drive.google.com/file/d/18CISr8iT5qkPrn2CSHBP9XwBaVJNuqpK/view?usp=sharing) · [Download MP4](submission/video/udyam-digital-demo.mp4) · [captions](submission/video/udyam-digital-demo.srt) |
+| Demo video (2:59) | [Watch on Google Drive](https://drive.google.com/file/d/1rgxMdYljXDKgNvWEKjD9Pxg4HXMppS7V/view?usp=sharing) · [Download MP4](submission/video/udyam-digital-demo.mp4) · [captions](submission/video/udyam-digital-demo.srt) |
 | Solution architecture | [PNG](submission/architecture/Udyam_Digital_Architecture.png) · [PDF](submission/architecture/Udyam_Digital_Architecture.pdf) · [PPTX](submission/architecture/Udyam_Digital_Architecture.pptx) |
 | Submission deck (7 slides, all deliverables) | [PDF](submission/deck/Udyam_Digital_Submission_7_Slides.pdf) · [PPTX](submission/deck/Udyam_Digital_Submission_7_Slides.pptx) |
 | Business case (10 slides) | [PDF](submission/deck/Udyam_Digital_Business_Case.pdf) · [PPTX](submission/deck/Udyam_Digital_Business_Case.pptx) |
