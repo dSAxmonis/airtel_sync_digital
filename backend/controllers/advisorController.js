@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { understand } from '../libs/advisorNlu.js';
-import { asksIdentity, mituIntro } from '../libs/mitu.js';
+import { mituReply, nextQuestion, acknowledge } from '../libs/mitu.js';
 import { advisorAvailable, advisorProvider, advisorTurn, AdvisorUnavailable } from '../libs/advisorAI.js';
 import { normaliseProfile } from '../libs/pricing.js';
 import { getCatalogue } from '../services/reference.js';
@@ -26,23 +26,26 @@ const bodySchema = z.object({
 export async function message(req, res) {
   const body = bodySchema.parse(req.body);
   aiEnabled ??= advisorAvailable();
-  // "What's your name?" / "kya naam hai?": Mitu introduces itself in the owner's language, then the chat moves on.
-  if (asksIdentity(body.text)) {
+  // Greetings, compliments, "who are you", price, product, KYC, time, a person, off-topic: Mitu answers in one short
+  // line in the owner's language, then the app asks the next question. Any answers in the message still count.
+  const mitu = mituReply(body.text, { language: body.language, answered: body.answered, history: body.history, catalogue: await getCatalogue() });
+  if (mitu) {
     const local = understand(body.text);
-    return res.json({ mode: 'rules', ...local, recognized: true, intro: mituIntro(body.text, body.language), ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
+    const done = [...body.answered, ...local.found];
+    return res.json({ mode: 'mitu', ...local, recognized: true, intent: mitu.intent, intro: mitu.intro, bridge: mitu.noQuestion ? null : nextQuestion(mitu.lang, done), noQuestion: Boolean(mitu.noQuestion), ready: KEYS.slice(0, 7).every(key => done.includes(key)) });
   }
   if (aiEnabled) {
     try {
-      const turn = await advisorTurn({ catalogue: await getCatalogue(), language: body.language, messages: [...body.history, { from: 'user', text: body.text }], profile: normaliseProfile(body.profile) });
+      const turn = await advisorTurn({ catalogue: await getCatalogue(), language: body.language, messages: [...body.history, { from: 'user', text: body.text }], profile: normaliseProfile(body.profile), answered: body.answered });
       const updates = Object.fromEntries(Object.entries(turn.profile_updates || {}).filter(([, value]) => value !== null).map(([key, value]) => [key, key === 'spend' ? String(value) : value]));
       return res.json({ mode: 'ai', model: turn.model, clarify: turn.clarify || null, reply: turn.reply, updates, found: Object.keys(updates), wants: turn.wants || [], budget: turn.budget ?? null, recognized: true, ready: turn.ready });
     } catch (error) {
       if (!(error instanceof AdvisorUnavailable)) throw error;
       if (/not configured/.test(error.message)) aiEnabled = false;
       const local = understand(body.text);
-      return res.json({ mode: 'rules', notice: error.message, ...local, ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
+      return res.json({ mode: 'rules', notice: error.message, ...local, ...(local.found.length ? acknowledge(body.text, body.language, [...body.answered, ...local.found]) : {}), ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
     }
   }
   const local = understand(body.text);
-  res.json({ mode: 'rules', ...local, ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
+  res.json({ mode: 'rules', ...local, ...(local.found.length ? acknowledge(body.text, body.language, [...body.answered, ...local.found]) : {}), ready: KEYS.slice(0, 7).every(key => body.answered.includes(key) || local.found.includes(key)) });
 }

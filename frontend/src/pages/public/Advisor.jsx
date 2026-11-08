@@ -138,7 +138,10 @@ function AdvisorChat() {
       if (data.wants?.length || data.budget) done.add('__extra');
       setAnswered(done);
       const index = nextStep(done);
-      const reply = data.intro ? { ...promptFor(index), text: `${data.intro}\n${promptFor(index).text}` }
+      // Never ask the very same question twice in a row: if the owner skipped it, Mitu only answers them.
+      const lastBot = [...messages].reverse().find(item => item.from === 'assistant' && !item.thinking)?.text || '';
+      const question = data.noQuestion ? '' : (data.bridge || promptFor(index).text);
+      const reply = data.intro ? { ...promptFor(index), text: question && !lastBot.includes(question) ? `${data.intro}\n${question}` : data.intro }
         : data.mode === 'ai' && data.reply ? { from: 'assistant', text: data.reply, chips: index < 0 || data.ready ? [] : flow[index].choices }
         : !data.recognized ? { from: 'assistant', text: `${copy.invalid} ${flow[nextStep(answered)]?.prompt || ''}`, chips: flow[nextStep(answered)]?.choices || [] }
           : promptFor(index);
