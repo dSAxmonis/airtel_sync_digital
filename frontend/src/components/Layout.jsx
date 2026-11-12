@@ -2,7 +2,7 @@ import { Component, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell, Menu, X, LogOut, Users, Store, Wrench, ShieldCheck, LayoutDashboard, Truck, Globe2, UserCog, ChevronLeft,
-  Home, Wifi, Receipt, MessageSquare, LifeBuoy, Lock, PackageCheck, Briefcase, ScrollText, Headset, ChevronDown, Trophy, ArrowRight,
+  Home, Wifi, Receipt, MessageSquare, LifeBuoy, Lock, PackageCheck, Briefcase, ScrollText, Headset, ChevronDown, Trophy, ArrowRight, Loader2,
 } from 'lucide-react';
 import { useAuth, HOME_FOR_ROLE } from '../context/AuthContext.jsx';
 import { useLanguage, LANGUAGES } from '../i18n/index.jsx';
@@ -282,28 +282,63 @@ export function RequireRole({ roles, children }) {
 }
 
 // Demo only (the server turns it off outside demo mode): switch between seeded actors in one click.
+// The button shows from the first paint. On a cold start the backend can take up to a minute to wake,
+// so the list is cached, the request is retried, and the button only hides when the server says demo mode is off.
+const DEMO_CACHE = 'ud_demo_accounts';
+const DEMO_BUILD = import.meta.env.VITE_DEMO_MODE !== 'off';
+const readDemoCache = () => { try { const list = JSON.parse(localStorage.getItem(DEMO_CACHE) || 'null'); return Array.isArray(list) ? list : null; } catch { return null; } };
+const writeDemoCache = list => { try { if (list) localStorage.setItem(DEMO_CACHE, JSON.stringify(list)); else localStorage.removeItem(DEMO_CACHE); } catch { /* storage unavailable */ } };
+
 export function RoleSwitcher() {
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
-  const [accounts, setAccounts] = useState(null);
+  const [accounts, setAccounts] = useState(readDemoCache);
+  const [off, setOff] = useState(false);
   const [open, setOpen] = useState(false);
-  useEffect(() => { api.get('/auth/demo-accounts').then(({ data }) => setAccounts(data.enabled ? data.accounts : [])).catch(() => setAccounts([])); }, []);
-  if (!accounts?.length) return null;
+  const [busy, setBusy] = useState(null);
+  const [problem, setProblem] = useState('');
+  const load = useRef(null);
+  useEffect(() => {
+    let stopped = false, timer, attempt = 0;
+    const fetchAccounts = () => api.get('/auth/demo-accounts', { timeout: 60000 }).then(({ data }) => {
+      if (stopped) return;
+      if (!data.enabled) { setOff(true); writeDemoCache(null); return; }
+      setAccounts(data.accounts); writeDemoCache(data.accounts);
+    }).catch(error => {
+      if (stopped) return;
+      if (error?.response?.status === 404) { setOff(true); writeDemoCache(null); return; }
+      // Server still waking up (or a network blip): try again with a growing pause.
+      timer = setTimeout(fetchAccounts, Math.min(2000 * 2 ** attempt++, 15000));
+    });
+    load.current = fetchAccounts;
+    fetchAccounts();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
+  if (!DEMO_BUILD || off) return null;
   const switchTo = async account => {
-    await api.post('/auth/demo-login', { userId: account.id });
-    const next = await refresh();
-    setOpen(false);
-    navigate(HOME_FOR_ROLE[next?.role || account.role]);
+    setBusy(account.id); setProblem('');
+    try {
+      await api.post('/auth/demo-login', { userId: account.id }, { timeout: 60000 });
+      const next = await refresh();
+      setOpen(false);
+      navigate(HOME_FOR_ROLE[next?.role || account.role]);
+    } catch (error) {
+      // A stale cached account (database reseeded) is refreshed; anything else is shown.
+      if (error?.response?.status === 404) { writeDemoCache(null); load.current?.(); }
+      setProblem(error?.code === 'ECONNABORTED' || !error?.response ? 'The server is still waking up. Please try again in a moment.' : 'Could not switch account. Please try again.');
+    } finally { setBusy(null); }
   };
-  const groups = accounts.reduce((map, account) => ({ ...map, [account.role]: [...(map[account.role] || []), account] }), {});
+  const groups = (accounts || []).reduce((map, account) => ({ ...map, [account.role]: [...(map[account.role] || []), account] }), {});
   return (
     <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end">
       {open && (
         <div className="rise mb-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-line bg-white p-2 shadow-pop">
           <p className="px-2 pt-1 text-sm font-semibold">View the demo as</p>
+          {!accounts?.length && <p className="flex items-center gap-2 px-2 py-3 text-sm text-ink-soft"><Loader2 className="h-4 w-4 shrink-0 animate-spin text-brand-600" />Waking up the demo server, this can take up to a minute…</p>}
+          {problem && <p className="mx-2 mt-2 rounded-lg bg-brand-50 px-2 py-1.5 text-xs text-brand-700">{problem}</p>}
           {Object.entries(groups).map(([role, list]) => (
             <div key={role} className="mt-2"><p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">{ROLE_LABEL[role]}</p>
-              {list.map(account => <button key={account.id} onClick={() => switchTo(account)} className={cx('flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm hover:bg-paper', user?.id === account.id && 'bg-brand-50 text-brand-700')}><span className="font-medium">{account.name}</span><span className="truncate pl-2 text-xs text-ink-faint">{account.cities.slice(0, 2).join(', ')}</span></button>)}
+              {list.map(account => <button key={account.id} disabled={Boolean(busy)} onClick={() => switchTo(account)} className={cx('flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm hover:bg-paper disabled:opacity-60', user?.id === account.id && 'bg-brand-50 text-brand-700')}><span className="flex items-center gap-2 font-medium">{busy === account.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />}{account.name}</span><span className="truncate pl-2 text-xs text-ink-faint">{account.cities.slice(0, 2).join(', ')}</span></button>)}
             </div>
           ))}
         </div>
